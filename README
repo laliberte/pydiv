@@ -1,0 +1,13 @@
+pydiv
+=========
+
+This package finds corrected velocities that close the mass conservation equation.
+
+The data must be in C-grid format.
+
+
+Frederic Laliberte, Paul J. Kushner
+Univerity of Toronto, 2013
+
+The Natural Sciences and Engineering Research Council of Canada (NSERC/CRSNG) funded 
+FBL and PJK during this project.
