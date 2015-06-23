@@ -71,8 +71,8 @@ def wa_from_div(options):
         if var=='wa': replicate_netcdf_var(output,data,var)
         vars_space[var]=data.variables[var][:,:,:,:].astype(np.float,copy=False)
     for var in ['mass']:
-        vars_space[var]=(data.variables[var][1:,:,:,:].astype(np.float,copy=False) -
-                         data.variables[var][:-1,:,:,:].astype(np.float,copy=False) )
+        vars_space[var]=0.5*(data.variables[var][1:-1,:,:,:].astype(np.float,copy=False) -
+                         data.variables[var][:-2,:,:,:].astype(np.float,copy=False) )
     
     #Compute spherical lengths:
     #lengths=spherical_tools.coords(data)
@@ -83,11 +83,13 @@ def wa_from_div(options):
     
     #Compute the mass divergence:
     DIV = vars_space['mass'] + vars_space['div'][1:-1]
-    vars_space['wa'][0,:,:]=0.0
-    vars_space['wa'][1:-1,:,:]=-np.cumsum(np.ma.array(DIV).anom(0),axis=0) 
-    vars_space['wa'][-1,:,:]=0.0
+    vars_space['wa'][0,...]=0.0
+    vars_space['wa'][1:-1,1:,...]=-np.cumsum(np.ma.array(DIV).anom(1),axis=1) 
+    #vars_space['wa'][1:-1,1:,:]=np.ma.array(DIV).anom(0) 
+    vars_space['wa'][1:-1,0,...]=0.0
+    vars_space['wa'][-1,...]=0.0
     for var in ['wa']:
-        output.variables[var][time_id,:,:,:]=vars_space[var]
+        output.variables[var][:]=vars_space[var]
 
     output.sync()
     output.close()
