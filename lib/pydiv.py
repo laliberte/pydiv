@@ -65,29 +65,29 @@ def wa_from_div(options):
     output=Dataset(options.out_file,'w')
     replicate_netcdf_file(output,data)
 
-    for time_id, time in enumerate([0]):#enumerate(data.variables['time'][:]):
-        #Retrieve data and create output:
-        vars_space=dict()
-        for var in ['div','wa']:
-            if var=='wa': replicate_netcdf_var(output,data,var)
-            vars_space[var]=data.variables[var][time_id,:,:,:].astype(np.float,copy=False)
-        for var in ['mass']:
-            vars_space[var]=(data.variables[var][time_id+1,:,:,:].astype(np.float,copy=False) -
-                             data.variables[var][time_id,:,:,:].astype(np.float,copy=False) )
-        
-        #Compute spherical lengths:
-        #lengths=spherical_tools.coords(data)
-        #Create vector calculus space:
-        #vector_calculus=spherical_tools.vector_calculus_spherical(vars_space['mass'].shape,lengths)
+    #Retrieve data and create output:
+    vars_space=dict()
+    for var in ['div','wa']:
+        if var=='wa': replicate_netcdf_var(output,data,var)
+        vars_space[var]=data.variables[var][:,:,:,:].astype(np.float,copy=False)
+    for var in ['mass']:
+        vars_space[var]=(data.variables[var][1:,:,:,:].astype(np.float,copy=False) -
+                         data.variables[var][:-1,:,:,:].astype(np.float,copy=False) )
+    
+    #Compute spherical lengths:
+    #lengths=spherical_tools.coords(data)
+    #Create vector calculus space:
+    #vector_calculus=spherical_tools.vector_calculus_spherical(vars_space['mass'].shape,lengths)
 
-        data.close()
-        
-        #Compute the mass divergence:
-        DIV = vars_space['mass'] + vars_space['div']
-        vars_space['wa'][1:,:,:]=-np.cumsum(np.ma.array(DIV).anom(0),axis=0) 
-        vars_space['wa'][-1,:,:]=0.0
-        for var in ['wa']:
-            output.variables[var][time_id,:,:,:]=vars_space[var]
+    data.close()
+    
+    #Compute the mass divergence:
+    DIV = vars_space['mass'] + vars_space['div'][1:-1]
+    vars_space['wa'][0,:,:]=0.0
+    vars_space['wa'][1:-1,:,:]=-np.cumsum(np.ma.array(DIV).anom(0),axis=0) 
+    vars_space['wa'][-1,:,:]=0.0
+    for var in ['wa']:
+        output.variables[var][time_id,:,:,:]=vars_space[var]
 
     output.sync()
     output.close()
