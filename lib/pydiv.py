@@ -129,13 +129,19 @@ def correct_mass_fluxes(options):
         for var, correction in zip(['ua','va','wa'],vector_calculus.UVW_mass_from_Chi(Chi)):
             vars_space[var]-=correction
 
-        output.createVariable('dmass_old',np.float,('time','lev','lat','lon'))
-        output.variables['dmass_old'][time_id,:,:,:] = DIV
-        output.createVariable('dmass',np.float,('time','lev','lat','lon'))
-        output.variables['dmass'][time_id,:,:,:] = vars_space['mass'] + vector_calculus.DIV_from_UVW_mass(*[vars_space[var] for var in ['ua','va','wa']])
-
-        for var in ['ua','va','wa']:
-            output.variables[var][time_id,:,:,:]=vars_space[var]
+        #Fix the poles:
+        if options.fix_poles:
+            output.createVariable('dmass_old',np.float,('time','lev','lat','lon'))
+            output.variables['dmass_old'][time_id,:,:,:] = DIV
+            dmass = vars_space['mass'] + vector_calculus.DIV_from_UVW_mass(*[vars_space[var] for var in ['ua','va','wa']])
+            vars_space['wa'][1:-1,:,:]-=np.cumsum(np.ma.array(dmass).anom(0),axis=0)[:-1,:,:]
+            for var in ['ua','va','wa']:
+                output.variables[var][time_id,:,:,:]=vars_space[var]
+            output.createVariable('dmass',np.float,('time','lev','lat','lon'))
+            output.variables['dmass'][time_id,:,:,:] = vars_space['mass'] + vector_calculus.DIV_from_UVW_mass(*[vars_space[var] for var in ['ua','va','wa']])
+        else:
+            for var in ['ua','va','wa']:
+                output.variables[var][time_id,:,:,:]=vars_space[var]
 
     output.sync()
     output.close()
@@ -264,6 +270,7 @@ def main():
                                            epilog=epilog,
                                            formatter_class=argparse.RawTextHelpFormatter)
     correct_parser.add_argument('--maxiter',type=int,default=10,help='Number of iterations')
+    correct_parser.add_argument('--fix_poles',default='False',action='store_true',help='Does additional fixing at the poles.')
     input_arguments(correct_parser)
 
     wa_parser=subparsers.add_parser('wa_from_div',
