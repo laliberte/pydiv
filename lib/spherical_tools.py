@@ -29,8 +29,8 @@ class horizontal_vector_calculus:
         U[:,0]=(Chi[:,0]-Chi[:,-1])
         U/=self.lengths.zon_len_lat_slon
         #Make sure U is zero at the poles:
-        U[0,:]=0.0
-        U[-1,:]=0.0
+        #U[0,:]=0.0
+        #U[-1,:]=0.0
 
         V=np.empty((self.shape[0]-1,self.shape[1]))
         V=(Chi[1:,:]-Chi[:-1,:])

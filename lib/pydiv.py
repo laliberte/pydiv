@@ -101,50 +101,65 @@ def correct_mass_fluxes(options):
     output=Dataset(options.out_file,'w')
     replicate_netcdf_file(output,data)
 
-    for time_id, time in enumerate([0]):#enumerate(data.variables['time'][:]):
-        #Retrieve data and create output:
-        vars_space=dict()
-        for var in ['ua','va','wa']:
-            replicate_netcdf_var(output,data,var)
-            vars_space[var]=data.variables[var][time_id,:,:,:].astype(np.float,copy=False)
-        for var in ['mass']:
-            vars_space[var]=(data.variables[var][time_id+1,:,:,:].astype(np.float,copy=False) -
-                             data.variables[var][time_id,:,:,:].astype(np.float,copy=False) )
-        
-        #Compute spherical lengths:
-        lengths=spherical_tools.coords(data)
-        #Create vector calculus space:
-        vector_calculus=spherical_tools.vector_calculus_spherical(vars_space['mass'].shape,lengths)
-
-        data.close()
-        
-        #Compute the mass divergence:
-        DIV = vars_space['mass'] + vector_calculus.DIV_from_UVW_mass(*[vars_space[var] for var in ['ua','va','wa']])
-        #del vars_space['mass']
+    #Retrieve data and create output:
+    vars_space=dict()
+    for var in ['ua','va','wa']:
+        replicate_netcdf_var(output,data,var)
+        vars_space[var]=data.variables[var][:].astype(np.float,copy=False)
+    for var in ['mass']:
+        vars_space[var]=(data.variables[var][1:-1,...].astype(np.float,copy=False) -
+                         data.variables[var][:-2,...].astype(np.float,copy=False) )
+    
+    #Compute spherical lengths:
+    lengths=spherical_tools.coords(data)
+    #Create vector calculus space:
+    vector_calculus=spherical_tools.vector_calculus_spherical(vars_space['mass'].shape[1:],lengths)
+    
+    #Compute the mass divergence:
+    DIV=np.zeros_like(vars_space['mass'])
+    for time_id, time in enumerate(range(len(data.variables['time'])-2)):
+        DIV[time_id,...] = (vars_space['mass'][time_id,...] + 
+                vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id+1,...] for var in ['ua','va','wa']])
+                )
 
         #Compute the velocity potential of the residual:
-        Chi = vector_calculus.inverse_laplacian(-DIV,maxiter=options.maxiter)
+        Chi = vector_calculus.inverse_laplacian(-DIV[time_id,...],maxiter=options.maxiter)
 
         #Compute the velocities corrections and record to output:
         for var, correction in zip(['ua','va','wa'],vector_calculus.UVW_mass_from_Chi(Chi)):
-            vars_space[var]-=correction
+            vars_space[var][time_id+1,...]-=correction
 
-        #Fix the poles:
-        if options.fix_poles:
-            output.createVariable('dmass_old',np.float,('time','lev','lat','lon'))
-            output.variables['dmass_old'][time_id,:,:,:] = DIV
-            dmass = vars_space['mass'] + vector_calculus.DIV_from_UVW_mass(*[vars_space[var] for var in ['ua','va','wa']])
-            vars_space['wa'][1:-1,:,:]-=np.cumsum(np.ma.array(dmass).anom(0),axis=0)[:-1,:,:]
-            for var in ['ua','va','wa']:
-                output.variables[var][time_id,:,:,:]=vars_space[var]
-            output.createVariable('dmass',np.float,('time','lev','lat','lon'))
-            output.variables['dmass'][time_id,:,:,:] = vars_space['mass'] + vector_calculus.DIV_from_UVW_mass(*[vars_space[var] for var in ['ua','va','wa']])
-        else:
-            for var in ['ua','va','wa']:
-                output.variables[var][time_id,:,:,:]=vars_space[var]
+    #Fix the poles:
+    if options.fix_poles:
+        output.createVariable('dmass_old',np.float,('time','lev','lat','lon'))
+        output.variables['dmass_old'][0,...] = 0.0
+        output.variables['dmass_old'][1:-1,...] = DIV
+        output.variables['dmass_old'][-1,...] = 0.0
+
+        dmass=np.zeros_like(vars_space['mass'])
+        for time_id in range(len(data.variables['time'])-2):
+            dmass[time_id,...] = (vars_space['mass'][time_id,...] + 
+                            vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id+1,...] for var in ['ua','va','wa']])
+                                 )
+        vars_space['wa'][1:-1,1:-1,...]-=np.cumsum(np.ma.array(dmass).anom(0),axis=0)[:,:-1,:,:]
+
+        for var in ['ua','va','wa']:
+            output.variables[var][:]=vars_space[var]
+
+        output.createVariable('dmass',np.float,('time','lev','lat','lon'))
+        output.variables['dmass'][0,...] = 0.0
+        for time_id in range(len(data.variables['time'])-2):
+            output.variables['dmass'][time_id+1,...] = (vars_space['mass'][time_id,...] + 
+                                                        vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id+1,...] for var in ['ua','va','wa']])
+                                                        )
+        output.variables['dmass'][-1,...] = 0.0
+    else:
+        for var in ['ua','va','wa']:
+            output.variables[var][:]=vars_space[var]
 
     output.sync()
     output.close()
+    data.close()
 
     return
 
