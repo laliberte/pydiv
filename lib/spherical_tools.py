@@ -24,15 +24,16 @@ class horizontal_vector_calculus:
         return
 
     def UV_from_Chi(self,Chi):
-        U=np.empty(self.shape)
+        U=np.zeros(self.shape)
         U[:,1:]=(Chi[:,1:]-Chi[:,:-1])
         U[:,0]=(Chi[:,0]-Chi[:,-1])
         U/=self.lengths.zon_len_lat_slon
         #Make sure U is zero at the poles:
-        #U[0,:]=0.0
-        #U[-1,:]=0.0
+        for id in [0,-1]:
+            if self.lengths.poles[id]:
+                U[id,:]=0.0
 
-        V=np.empty((self.shape[0]-1,self.shape[1]))
+        V=np.zeros((self.shape[0]-1,self.shape[1]))
         V=(Chi[1:,:]-Chi[:-1,:])
         V/=self.lengths.mer_len_slat_lon
         return U, V
@@ -45,7 +46,7 @@ class horizontal_vector_calculus:
 
     def DIV_from_UV(self,U,V):
         U,V = self.multiply_UV_by_lengths(U,V)
-        DIV=np.empty(self.shape)
+        DIV=np.zeros(self.shape)
         DIV[:,:-1]=(U[:,1:]-U[:,:-1])
         DIV[:,-1]=(U[:,0]-U[:,-1])
 
@@ -84,6 +85,7 @@ class horizontal_vector_calculus:
         DIV-=DIV.mean()
         div=self._flatten_spherical_array(DIV)
 
+        type=np.float
         if wavenumber_sqr>=0:
             helmholtz=linalg.LinearOperator((len(div),len(div)),
                                         (lambda x: self._flatten_spherical_array(
@@ -91,7 +93,7 @@ class horizontal_vector_calculus:
                                                             self._unflatten_spherical_array(x,DIV[1:-1,:].shape),wavenumber_sqr=wavenumber_sqr
                                                                                     )
                                                                             )),
-                                        dtype=np.float)
+                                        dtype=type)
             initial_value=linalg.LinearOperator((len(div),len(div)),
                                         (lambda x: self._flatten_spherical_array(
                                                         self.spharm.inverse_helmholtz(
@@ -100,10 +102,21 @@ class horizontal_vector_calculus:
                                                                                                     )
                                                                           )
                                                     ),
-                                        dtype=np.float)
+                                        dtype=type)
+            preconditioner=linalg.LinearOperator((len(div),len(div)),
+                                        (lambda x: self._flatten_spherical_array(
+                                                        self.inverse_helmholtz_approx(
+                                                                        self._unflatten_spherical_array(x,DIV[1:-1,:].shape),
+                                                                        wavenumber_sqr=wavenumber_sqr
+                                                                                                    )
+                                                                          )
+                                                    ),
+                                        dtype=type)
 
             velopot=initial_value.matvec(div)
-            sol ,info=linalg.cg(helmholtz,div,x0=velopot,maxiter=20)
+            sol ,info=linalg.cg(helmholtz,div,x0=velopot,M=preconditioner,maxiter=2)
+            #sol ,info=linalg.cg(helmholtz,div,x0=velopot,maxiter=5)
+            #sol ,info=linalg.cg(helmholtz,div,x0=velopot,maxiter=2)
             #sol=velopot
         else:
             raise ValueError('The wavenumer_sqr argument should be nonnegative')
@@ -224,14 +237,14 @@ class vertical_discrete_calculus:
         return
 
     def W_from_Chi(self,Chi):
-        W=np.empty(len(Chi)+1)
+        W=np.zeros(len(Chi)+1)
         W[1:-1]=(Chi[1:]-Chi[:-1])
         W[0]=0.0
         W[-1]=0.0
         return W
 
     def DIV_from_W(self,W):
-        DIV=np.empty(len(W)-1)
+        DIV=np.zeros(len(W)-1)
         DIV=W[1:]-W[:-1]
         return DIV
 
@@ -302,7 +315,10 @@ class coords:
 
         area='area_lat_lon'
         setattr(self,area,darea)
-
+        
+        poles=[(np.abs(lat[id])==90.0) for id in [0,-1]]
+            
+        setattr(self,'poles',poles)
         return
 
 class vector_calculus_spherical:
@@ -317,6 +333,28 @@ class vector_calculus_spherical:
     def add_first_axis(self,array):
         return np.reshape(array,(1,)+array.shape)
 
+    def inverse_laplacian_approx_good(self,DIV):
+        """
+        An very good approximate inverse to the laplacian in spherical coordinates.
+        Can be used as an initial guess for an iteration.
+        Inverts the positive definite $-nabla^2$ operator. 
+        """
+        Chi = fftpack.idct(
+                np.concatenate(
+                             map(
+                                lambda x: self.add_first_axis(
+                                            self.spherical_calculus.inverse_helmholtz(np.squeeze(x[0]),x[1])
+                                            #self.spherical_calculus.inverse_helmholtz_approx(np.squeeze(x[0]),x[1])
+                                            ),
+                                zip(
+                                    np.split(fftpack.dct(DIV,axis=0,norm='ortho',overwrite_x=True),DIV.shape[0],axis=0),
+                                    self.vertical_calculus._s_Inv_Laplacian
+                                    )
+                                )
+                             ),
+                        axis=0,norm='ortho',overwrite_x=True)
+        return Chi
+
     def inverse_laplacian_approx(self,DIV):
         """
         An approximate inverse to the laplacian in spherical coordinates.
@@ -327,7 +365,8 @@ class vector_calculus_spherical:
                 np.concatenate(
                              map(
                                 lambda x: self.add_first_axis(
-                                            self.spherical_calculus.inverse_helmholtz(np.squeeze(x[0]),x[1])
+                                            #self.spherical_calculus.inverse_helmholtz(np.squeeze(x[0]),x[1])
+                                            self.spherical_calculus.inverse_helmholtz_approx(np.squeeze(x[0]),x[1])
                                             ),
                                 zip(
                                     np.split(fftpack.dct(DIV,axis=0,norm='ortho',overwrite_x=True),DIV.shape[0],axis=0),
@@ -430,27 +469,37 @@ class vector_calculus_spherical:
         DIV-=DIV.mean()
         div=self._flatten_spherical_array(DIV)
 
+        type=np.float
         laplacian=linalg.LinearOperator((len(div),len(div)),
                                     (lambda x: self._flatten_spherical_array(
                                                     self.laplacian(
                                                         self._unflatten_spherical_array(x,DIV[:,1:-1,:].shape)
                                                                                 )
                                                                         )),
-                                    dtype=np.float)
+                                    dtype=type)
         initial_value=linalg.LinearOperator((len(div),len(div)),
+                                    (lambda x: self._flatten_spherical_array(
+                                                    self.inverse_laplacian_approx_good(
+                                                                    self._unflatten_spherical_array(x,DIV[:,1:-1,:].shape)
+                                                                                                )
+                                                                      )
+                                                ),
+                                    dtype=type)
+        preconditioner=linalg.LinearOperator((len(div),len(div)),
                                     (lambda x: self._flatten_spherical_array(
                                                     self.inverse_laplacian_approx(
                                                                     self._unflatten_spherical_array(x,DIV[:,1:-1,:].shape)
                                                                                                 )
                                                                       )
                                                 ),
-                                    dtype=np.float)
+                                    dtype=type)
 
         velopot=initial_value.matvec(div)
         if maxiter==0:
             sol=velopot
         else:
-            sol ,info=linalg.cg(laplacian,div,x0=velopot,maxiter=maxiter)
+            #sol ,info=linalg.cg(laplacian,div,x0=velopot,M=initial_value,maxiter=maxiter)
+            sol ,info=linalg.cg(laplacian,div,x0=velopot,M=preconditioner,maxiter=maxiter)
 
         return self._unflatten_spherical_array(sol,DIV[:,1:-1,:].shape)
 
