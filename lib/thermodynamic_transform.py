@@ -23,7 +23,9 @@ def heat_engine_science(options):
     #COMPUTE THE SIZE OF THE PHASE SPACE:
     phase_space_length=compute_phase_space_length(lengths)
 
-    dist_def={ var:{'vars':['s_moist','hus','pa'],'lengths':lengths,'phase_space_length':phase_space_length} for var in ['dmass','mass','ua','va','wa']}
+    dist_def={ var:{'vars':['s_moist','hus','pa'],
+                'lengths':lengths,
+                'phase_space_length':phase_space_length} for var in ['dmass','mass','ua','va','wa']}
     #dist_def={ var:{'vars':['s_moist','hus'],'lengths':lengths,'phase_space_length':phase_space_length} for var in ['dmass','mass','ua','va','wa']}
     #dist_def={ var:{'vars':['s_moist',],'lengths':lengths,'phase_space_length':phase_space_length} for var in ['dmass','mass','ua','va','wa']}
 
@@ -33,15 +35,16 @@ def heat_engine_science(options):
     dist_def['va']['dims'] = ['slat','lon','lev']
     dist_def['wa']['dims'] = ['lat','lon','slev']
 
-    var_list=['mass','ua','va','wa']
+    var_list=['ua','va','wa','mass']
     for var in var_list:
+        print var
         jd_space=create_fluxes_science(data,var,dist_def)
         fluxes = np.apply_along_axis(compute_vector_jd_got,-1,
                                          jd_space,
                                          dist_def[var])
         output_conversion_fluxes(data,output,var,fluxes,options,dist_def[var])
         if var=='mass':
-            for type in ['previous','next']:
+            for type in ['previous']:
                 jd_space=create_fluxes_science(data,var,dist_def,mass=type)
                 mass = np.apply_along_axis(compute_vector_jd,-1,
                                                  jd_space,
@@ -67,11 +70,16 @@ def heat_engine_science(options):
                 temp=np.zeros(output_grp.variables['va_diff'].shape)
                 dims=output_grp.variables['va_diff'].dimensions
             for var in var_list:
-                if var=='mass':
-                    temp[1:-1,...]+=output_grp.variables[var+'_diff'][:-1,...]
-                else:
-                    temp+=output_grp.variables[var+'_diff'][:]
+                temp+=output_grp.variables[var+'_diff'][:]
 
+        disc=discretizations_science(dist_def['va'])
+        for other_gotvar in dist_def['va']['vars']:
+            if (not other_gotvar.capitalize() in output_fluxes.dimensions.keys()):
+                length=dist_def['va']['lengths'][dist_def['va']['vars'].index(other_gotvar)]
+                output_fluxes.createDimension(other_gotvar.capitalize(),length)
+                output_fluxes.createVariable(other_gotvar.capitalize(),'d',(other_gotvar.capitalize(),))
+
+                output_fluxes.variables[other_gotvar.capitalize()][:]=disc.inv_conversion(other_gotvar)(disc.inv_discretization(other_gotvar)(np.arange(0,length)+0.5))
         output_fluxes.createVariable('divergence','d',dims)
         output_fluxes.variables['divergence'][:]=temp
         output.sync()
@@ -124,9 +132,11 @@ def output_conversion_fluxes(data,output,var,fluxes,options,dist_def):
         data_grp=data.groups[flux_var]
     else:
         data_grp=data.groups[var]
+
     for time_type in ['time','stime']:
         if time_type in data_grp.dimensions.keys():
             time_var=time_type
+    time_var='time'
 
     if not time_var in output_fluxes.dimensions.keys():
         output_fluxes.createDimension(time_var,len(data_grp.variables[time_var]))
@@ -136,35 +146,26 @@ def output_conversion_fluxes(data,output,var,fluxes,options,dist_def):
         output_fluxes.variables[time_var].setncattr('calendar',data_grp.variables[time_var].calendar)
 
     for gotvar in fluxes.dtype.names:
-        if not 's'+gotvar.capitalize() in output.dimensions.keys():
-            length=dist_def['lengths'][dist_def['vars'].index(gotvar)]
-            output.createDimension('s'+gotvar.capitalize(),length-1)
-            output.createVariable('s'+gotvar.capitalize(),'d',('s'+gotvar.capitalize(),))
-            output.variables['s'+gotvar.capitalize()][:]=disc.inv_conversion(gotvar)(disc.inv_discretization(gotvar)(np.arange(1,length)))
-        for other_gotvar in fluxes.dtype.names:
-            if (not other_gotvar.capitalize() in output.dimensions.keys()):
-                length=dist_def['lengths'][dist_def['vars'].index(other_gotvar)]
-                output.createDimension(other_gotvar.capitalize(),length)
-                output.createVariable(other_gotvar.capitalize(),'d',(other_gotvar.capitalize(),))
-
-                output.variables[other_gotvar.capitalize()][:]=disc.inv_conversion(other_gotvar)(disc.inv_discretization(other_gotvar)(np.arange(0,length)+0.5))
-
         if not gotvar in output_fluxes.groups.keys():
             output_fluxes.createGroup(gotvar)
         output_grp=output_fluxes.groups[gotvar]
+
+        if not 's'+gotvar.capitalize() in output_grp.dimensions.keys():
+            length=dist_def['lengths'][dist_def['vars'].index(gotvar)]
+            output_grp.createDimension('s'+gotvar.capitalize(),length-1)
+            output_grp.createVariable('s'+gotvar.capitalize(),'d',('s'+gotvar.capitalize(),))
+            output_grp.variables['s'+gotvar.capitalize()][:]=disc.inv_conversion(gotvar)(disc.inv_discretization(gotvar)(np.arange(1,length)))
+        for other_gotvar in fluxes.dtype.names:
+            if (not other_gotvar.capitalize() in output_grp.dimensions.keys()):
+                length=dist_def['lengths'][dist_def['vars'].index(other_gotvar)]
+                output_grp.createDimension(other_gotvar.capitalize(),length)
+                output_grp.createVariable(other_gotvar.capitalize(),'d',(other_gotvar.capitalize(),))
+
+                output_grp.variables[other_gotvar.capitalize()][:]=disc.inv_conversion(other_gotvar)(disc.inv_discretization(other_gotvar)(np.arange(0,length)+0.5))
         
         phase_space_dims=tuple(['s'+ps_dim.capitalize() if ps_dim==gotvar else ps_dim.capitalize() for ps_dim in dist_def['vars']])
         output_grp.createVariable(var,'d',(time_var,)+phase_space_dims,zlib=options.compression)
 
-        #if len(fluxes[gotvar].shape)>2:
-        #    shape=list(fluxes[gotvar].shape[:-1]+output_grp.variables[var].shape[-len(dist_def['vars']):])
-        #    index_staggered = list(output_grp.variables[var].dimensions).index('s'+gotvar.capitalize())+len(fluxes[gotvar].shape)-2
-        #    shape[index_staggered]+=1
-        #
-        #    temp=np.sum(np.take(
-        #                np.reshape(fluxes[gotvar],tuple(shape),order='F'),
-        #                    range(1,shape[index_staggered]),axis=index_staggered),axis=tuple(range(1,len(fluxes[gotvar].shape)-1)))
-        #else:
         shape=list(output_grp.variables[var].shape)
         index_staggered = list(output_grp.variables[var].dimensions).index('s'+gotvar.capitalize())
         shape[index_staggered]+=1
@@ -180,21 +181,6 @@ def output_conversion_fluxes(data,output,var,fluxes,options,dist_def):
             shape_cat = copy.copy(shape)
             shape_cat[index_staggered]=1
 
-            #if len(fluxes[gotvar].shape)>2:
-            #    shape=list(fluxes[gotvar].shape[:-1]+output_grp.variables[var+'_diff'].shape[-len(dist_def['vars']):])
-            #    index_staggered = list(output_grp.variables[var+'_diff'].dimensions).index(gotvar.capitalize())+len(fluxes[gotvar].shape)-2
-            #    #shape[index_staggered]+=1
-            #    shape_cat = copy.copy(shape)
-            #    shape_cat[index_staggered]=1
-            #    output_grp.variables[var+'_diff'][:]=np.sum(np.diff(
-            #                np.concatenate(
-            #                    (
-            #                    np.reshape(fluxes[gotvar],tuple(shape),order='F'),
-            #                    np.zeros(shape_cat),
-            #                    ),
-            #                    axis=index_staggered
-            #                    ),axis=index_staggered),axis=tuple(range(1,len(fluxes[gotvar].shape)-1)))
-            #else:
             shape=list(output_grp.variables[var+'_diff'].shape)
             index_staggered = list(output_grp.variables[var+'_diff'].dimensions).index(gotvar.capitalize())
             shape_cat = copy.copy(shape)
@@ -230,6 +216,15 @@ def output_conversion_mass(data,output,var,mass,options,dist_def,type):
         output_mass.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
         output_mass.variables[time_var].setncattr('calendar',data_grp.variables[time_var].calendar)
 
+    disc=discretizations_science(dist_def)
+    for other_gotvar in dist_def['vars']:
+        if (not other_gotvar.capitalize() in output_mass.dimensions.keys()):
+            length=dist_def['lengths'][dist_def['vars'].index(other_gotvar)]
+            output_mass.createDimension(other_gotvar.capitalize(),length)
+            output_mass.createVariable(other_gotvar.capitalize(),'d',(other_gotvar.capitalize(),))
+
+            output_mass.variables[other_gotvar.capitalize()][:]=disc.inv_conversion(other_gotvar)(disc.inv_discretization(other_gotvar)(np.arange(0,length)+0.5))
+    
     phase_space_dims=tuple([ps_dim.capitalize() for ps_dim in dist_def['vars']])
     output_mass.createVariable(var+'_'+type,'d',(time_var,)+phase_space_dims,zlib=options.compression)
 
@@ -336,22 +331,13 @@ def create_fluxes_science(data,var,dist_def,mass=None):
                                                      data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
                                         ))
         return jd_space
-    elif mass=='next':
+    elif mass=='centre':
         for gotvar in dist_def[var]['vars']:
             jd_space[gotvar]=disc.discretization(gotvar)(disc.conversion(gotvar)(
                                 collapse_dims_last_var(data.groups[gotvar].variables[gotvar][1:,...],
                                                      data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
                                         ))
         return jd_space
-    elif mass=='centre':
-        for gotvar in dist_def[var]['vars']:
-            jd_space[gotvar]=disc.discretization(gotvar)(disc.conversion(gotvar)(
-                                collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:,...],
-                                                     data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
-                                        ))
-        return jd_space
-
-
 
 
     for gotvar in dist_def[var]['vars']:
@@ -361,19 +347,19 @@ def create_fluxes_science(data,var,dist_def,mass=None):
             gotvar_p=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:-1,...],
                                                 data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
         elif var == 'wa':
-            gotvar_n=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:,1:,:,:],
+            gotvar_n=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][1:,1:,:,:],
                                                 data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
-            gotvar_p=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:,:-1,:,:],
+            gotvar_p=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][1:,:-1,:,:],
                                                 data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
         elif var == 'va':
-            gotvar_n=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:,:,1:,:],
+            gotvar_n=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][1:,:,1:,:],
                                                 data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
-            gotvar_p=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:,:,:-1,:],
+            gotvar_p=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][1:,:,:-1,:],
                                                 data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
         elif var == 'ua':
-            gotvar_n=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][...],
+            gotvar_n=collapse_dims_last_var(data.groups[gotvar].variables[gotvar][1:,...],
                                                 data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
-            gotvar_p=collapse_dims_last_var(np.roll(data.groups[gotvar].variables[gotvar][...],1,axis=-1),
+            gotvar_p=collapse_dims_last_var(np.roll(data.groups[gotvar].variables[gotvar][1:,...],1,axis=-1),
                                                 data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
 
         gotvar_p=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_p))

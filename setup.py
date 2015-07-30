@@ -41,7 +41,7 @@ setup(
         entry_points = {
                   'console_scripts': [
                            'pydiv_fixmass= '+package_name+'.pydiv:main',
-                           'pydiv_jd= '+package_name+'.thermodynamic_transform:main'
+                           'pydiv_tt= '+package_name+'.thermodynamic_transform:main'
                                      ],
                        }
     )
