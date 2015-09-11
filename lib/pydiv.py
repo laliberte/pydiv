@@ -38,7 +38,7 @@ def multiply_by_area(options):
     replicate_netcdf_file(output,data)
     lengths=spherical_tools.coords(data)
 
-    for var in ['wa','mass']:
+    for var in ['wa','mass','weight_wa']:
         replicate_netcdf_var(output,data,var)
         output.variables[var][:]=data.variables[var][:]*np.reshape(lengths.area_lat_lon,(1,1,)+data.variables[var].shape[-2:])
         output.sync()
@@ -50,13 +50,15 @@ def multiply_by_length(options,output):
     lengths=spherical_tools.coords(data)
 
     var='ua'
-    replicate_netcdf_var(output,data,var)
-    output.variables[var][:]=data.variables[var][:]*np.reshape(lengths.mer_len_lat_slon,(1,1,)+(data.variables[var].shape[-2],)+(1,))
+    for var_sub in [var,'weight_'+var]:
+        replicate_netcdf_var(output,data,var_sub)
+        output.variables[var_sub][:]=data.variables[var_sub][:]*np.reshape(lengths.mer_len_lat_slon,(1,1,)+(data.variables[var_sub].shape[-2],)+(1,))
     output.sync()
 
     var='va'
-    replicate_netcdf_var(output,data,var)
-    output.variables[var][:]=data.variables[var][:]*np.reshape(lengths.zon_len_slat_lon,(1,1,)+data.variables[var].shape[-2:])
+    for var_sub in [var,'weight_'+var]:
+        replicate_netcdf_var(output,data,var_sub)
+        output.variables[var_sub][:]=data.variables[var_sub][:]*np.reshape(lengths.zon_len_slat_lon,(1,1,)+data.variables[var_sub].shape[-2:])
     output.sync()
     return output
 
@@ -71,7 +73,7 @@ def wa_from_div(options):
         if var=='wa': replicate_netcdf_var(output,data,var)
         vars_space[var]=data.variables[var][:,:,:,:].astype(np.float,copy=False)
     for var in ['mass']:
-        vars_space[var]=0.5*(data.variables[var][1:-1,:,:,:].astype(np.float,copy=False) -
+        vars_space[var]=0.5*(data.variables[var][2:,:,:,:].astype(np.float,copy=False) -
                          data.variables[var][:-2,:,:,:].astype(np.float,copy=False) )
     
     #Compute spherical lengths:

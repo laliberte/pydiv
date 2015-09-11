@@ -14,12 +14,12 @@ from setuptools import setup, find_packages
 package_name='pydiv'
 setup(
        name = package_name,
-       version = "0.5",
+       version = "0.6",
        packages=[package_name],
        package_dir = {package_name: 'lib'},
 #
 #        # metadata for upload to PyPI
-        author = "F. B. Laliberté, P. J. Kushner",
+        author = "F. B. Laliberte, P. J. Kushner",
         author_email = "frederic.laliberte@utoronto.ca",
         description = "Tools to find corrected velocities to close the continuity equation",
         license = "BSD",
