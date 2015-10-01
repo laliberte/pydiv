@@ -73,23 +73,16 @@ def wa_from_div(options):
         if var=='wa': replicate_netcdf_var(output,data,var)
         vars_space[var]=data.variables[var][:,:,:,:].astype(np.float,copy=False)
     for var in ['mass']:
-        vars_space[var]=0.5*(data.variables[var][2:,:,:,:].astype(np.float,copy=False) -
-                         data.variables[var][:-2,:,:,:].astype(np.float,copy=False) )
+        vars_space[var]=(data.variables[var][1:,:,:,:].astype(np.float,copy=False) -
+                         data.variables[var][:-1,:,:,:].astype(np.float,copy=False))
     
-    #Compute spherical lengths:
-    #lengths=spherical_tools.coords(data)
-    #Create vector calculus space:
-    #vector_calculus=spherical_tools.vector_calculus_spherical(vars_space['mass'].shape,lengths)
-
     data.close()
     
     #Compute the mass divergence:
-    DIV = vars_space['mass'] + vars_space['div'][1:-1]
-    vars_space['wa'][0,...]=0.0
-    vars_space['wa'][1:-1,1:,...]=-np.cumsum(np.ma.array(DIV).anom(1),axis=1) 
+    DIV = vars_space['mass'] + vars_space['div']
+    vars_space['wa'][:,1:,...]=-np.cumsum(np.ma.array(DIV).anom(1),axis=1) 
     #vars_space['wa'][1:-1,1:,:]=np.ma.array(DIV).anom(0) 
-    vars_space['wa'][1:-1,0,...]=0.0
-    vars_space['wa'][-1,...]=0.0
+    vars_space['wa'][:,0,...]=0.0
     for var in ['wa']:
         output.variables[var][:]=vars_space[var]
 
@@ -111,8 +104,8 @@ def correct_mass_fluxes(options):
         vars_space[var]=data.variables[var][:].astype(type,copy=False)
     for var in ['mass']:
         replicate_netcdf_var(output,data,var)
-        vars_space[var]=0.5*(data.variables[var][1:,...].astype(type,copy=False) +
-                         data.variables[var][:-1,...].astype(type,copy=False) )
+        vars_space[var]=data.variables[var][:].astype(type,copy=False)
+        output.variables[var][:]=vars_space[var]
     for var in ['dmassdt']:
         vars_space[var]=(vars_space['mass'][1:,...]-vars_space['mass'][:-1,...]).astype(type,copy=False)
     
@@ -128,48 +121,41 @@ def correct_mass_fluxes(options):
     
     #Compute the mass divergence:
     DIV=np.zeros_like(vars_space['dmassdt'])
-    for time_id, time in enumerate(range(len(data.variables['time'])-2)):
+    for time_id, time in enumerate(range(len(data.variables['time']))):
         DIV[time_id,...] = (vars_space['dmassdt'][time_id,...] + 
-                vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id+1,...] for var in ['ua','va','wa']])
+                vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id,...] for var in ['ua','va','wa']])
                 )
 
-    for time_id, time in enumerate(range(len(data.variables['time'])-2)):
+    for time_id, time in enumerate(range(len(data.variables['time']))):
         #Compute the velocity potential of the residual:
         Chi = vector_calculus.inverse_laplacian(-DIV[time_id,...],maxiter=options.maxiter)
 
         #Compute the velocities corrections and record to output:
         for var, correction in zip(['ua','va','wa'],vector_calculus.UVW_mass_from_Chi(Chi)):
-            vars_space[var][time_id+1,...]-=correction
+            vars_space[var][time_id,...]-=correction
 
     dmass=np.zeros_like(vars_space['dmassdt'])
-    for time_id in range(len(data.variables['time'])-2):
+    for time_id in range(len(data.variables['time'])):
         dmass[time_id,...] = (vars_space['dmassdt'][time_id,...] + 
-                        vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id+1,...] for var in ['ua','va','wa']])
+                        vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id,...] for var in ['ua','va','wa']])
                              )
 
     #Fix vertical velocity:
-    vars_space['wa'][1:-1,1:-1,...]-=np.cumsum(np.ma.array(dmass).anom(1),axis=1)[:,:-1,:,:]
+    vars_space['wa'][:,1:-1,...]-=np.cumsum(np.ma.array(dmass).anom(1),axis=1)[:,:-1,:,:]
 
     for var in ['ua','va','wa']:
         output.variables[var][:]=vars_space[var]
-    for var in ['mass']:
-        output.variables[var][0,...]=0.0
-        output.variables[var][1:,...]=vars_space[var][:,...]
 
     if options.check_output:
         output.createVariable('dmass_old',type,('time','lev','lat','lon'))
-        output.variables['dmass_old'][0,...] = 0.0
-        output.variables['dmass_old'][1:-1,...] = DIV
-        output.variables['dmass_old'][-1,...] = 0.0
+        output.variables['dmass_old'][:,...] = DIV
 
         output.createVariable('dmass',type,('time','lev','lat','lon'))
-        for time_id in range(len(data.variables['time'])-2):
+        for time_id in range(len(data.variables['time'])):
             dmass[time_id,...] = (vars_space['dmassdt'][time_id,...] + 
-                                                        vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id+1,...] for var in ['ua','va','wa']])
+                                                        vector_calculus.DIV_from_UVW_mass(*[vars_space[var][time_id,...] for var in ['ua','va','wa']])
                                                         )
-        output.variables['dmass'][0,...] = 0.0
-        output.variables['dmass'][1:-1,...] = dmass
-        output.variables['dmass'][-1,...] = 0.0
+        output.variables['dmass'][:,...] = dmass
 
     output.sync()
     output.close()

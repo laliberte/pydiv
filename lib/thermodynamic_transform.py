@@ -1,5 +1,5 @@
 """
-Frederic Laliberte 12/2013
+Frederic Laliberte 09/2015
 """
 import sys
 import numpy as np
@@ -7,6 +7,42 @@ from netCDF4 import Dataset, num2date
 import datetime as dt
 import copy
 import pkg_resources
+
+def coarse_grain(options):
+    #CONVERT THE DIST VARS TO BIN VALUES AND PUT THEM ALONG THE SAME AXIS
+    lengths = [14,180,36]
+    #COMPUTE THE SIZE OF THE PHASE SPACE:
+    phase_space_length=compute_phase_space_length(lengths)
+
+    dist_def={ var:{'vars':['pa','latitude','longitude'],
+                'lengths':lengths,
+                'discretization_type':'coarse',
+                'phase_space_length':phase_space_length} for var in ['dmass','mass','ua','va','wa']}
+
+    dist_def['dmass']['dims'] = ['lat','lon','lev']
+    dist_def['mass']['dims'] = ['lat','lon','lev']
+    dist_def['ua']['dims'] = ['lat','slon','lev']
+    dist_def['va']['dims'] = ['slat','lon','lev']
+    dist_def['wa']['dims'] = ['lat','lon','slev']
+
+    dist_def['dmass']['time_type'] = 'centre'
+    dist_def['mass']['time_type'] = 'previous'
+    dist_def['ua']['time_type'] = 'centre'
+    dist_def['va']['time_type'] = 'centre' 
+    dist_def['wa']['time_type'] = 'centre'
+
+    dist_def['mass']['axis'] = 0
+    dist_def['wa']['axis'] = 1
+    dist_def['va']['axis'] = 2
+    dist_def['ua']['axis'] = 3
+
+    dist_def['mass']['bc'] = 'staggered'
+    dist_def['dmass']['bc'] = 'constant'
+    dist_def['va']['bc'] = 'staggered'
+    dist_def['ua']['bc'] = 'periodic'
+    dist_def['wa']['bc'] = 'staggered'
+
+    return perform_transforms(options,dist_def)
 
 def heat_engine_science(options):
     #CONVERT THE DIST VARS TO BIN VALUES AND PUT THEM ALONG THE SAME AXIS
@@ -16,6 +52,7 @@ def heat_engine_science(options):
 
     dist_def={ var:{'vars':['latitude','smoist','hus','pa'],
                 'lengths':lengths,
+                'discretization_type':'science',
                 'phase_space_length':phase_space_length} for var in ['dmass','mass','ua','va','wa']}
 
     dist_def['dmass']['dims'] = ['lat','lon','lev']
@@ -56,6 +93,7 @@ def projection_science(options):
 
     dist_def={ var:{'vars':['latitude',]+options.coordinates.split(','),
                 'lengths':lengths,
+                'discretization_type':'science',
                 'phase_space_length':phase_space_length} for var in ['dmass','mass','latitude','smoist','pa','hus']}
 
     dist_def['dmass']['dims'] = ['Longitude','Smoist','Hus','Pa']
@@ -110,7 +148,6 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
                                                  jd_space,
                                                  dist_def[var])
                 output_conversion_fluxes(data,output,group_name,flux_var,var,fluxes,options,dist_def[var],source_name,out_name)
-                print flux_var.split('_')
                 if not 'weight' in flux_var.split('_'):
                     output_conversion_checks(data,output,group_name,flux_var,var,checks,options,source_name,out_name)
                 output.sync()
@@ -128,7 +165,7 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
         dims=['s'+var.capitalize() if var==gotvar else var.capitalize() for var in dist_def[var_ref]['vars']]
         out_group_name='massfluxes_tt_'+out_name+gotvar
         output_grp=output.groups[out_group_name]
-        excluded_keywords=['sum','weight','check','diff']
+        excluded_keywords=['sum','weight','check','diff','quantity']
         var_list=[var for var in output.groups[out_group_name].variables.keys() if 
                                  ( set(output.groups[out_group_name].variables[var].dimensions).issuperset(dims) and
                                    len(set(var.split('_')).intersection(excluded_keywords))==0 )]
@@ -168,7 +205,7 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
             output_div.variables[time_var].setncattr('units',output_grp.variables[time_var].units)
             output_div.variables[time_var].setncattr('calendar',output_grp.variables[time_var].calendar)
 
-        disc=discretizations_science(dist_def[dist_def.keys()[0]])
+        disc=discretizations_class(dist_def[dist_def.keys()[0]])
 
         for other_gotvar in dist_def[dist_def.keys()[0]]['vars']:
             if (not other_gotvar.capitalize() in output_div.dimensions.keys()):
@@ -184,23 +221,30 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
     output.close()           
     return
 
-class discretizations_science():
+class discretizations_class():
     def __init__(self,dist_def):
         self.cp=1001
         self.Lv=2.5e6
         self.T0=273.15
         self.dist_def=dist_def
-        self.disc_dict={
-                'latitude':{'min':-90.0,'delta':15.0},
-                'smoist':{'min':220.0,'delta':1.0},
-                'hus':{'min':0.0,'delta':1.0},
-                'pa':{'min':10.0e2,'delta':10.0e2},
-                'ta':{'min':200.0,'delta':1.0},
-                'gh_gc':{'min':-1e5,'delta':5e3},
-                'gc_gv':{'min':-1e5,'delta':5e3},
-                'gd':{'min':-1e5,'delta':5e3},
-                'thetav':{'min':220.0,'delta':1.0}
-                }
+        if self.dist_def['discretization_type']=='science':
+            self.disc_dict={
+                    'latitude':{'min':-90.0,'delta':15.0},
+                    'smoist':{'min':220.0,'delta':1.0},
+                    'hus':{'min':0.0,'delta':1.0},
+                    'pa':{'min':10.0e2,'delta':10.0e2},
+                    'ta':{'min':200.0,'delta':1.0},
+                    'gh_gc':{'min':-1e5,'delta':5e3},
+                    'gc_gv':{'min':-1e5,'delta':5e3},
+                    'gd':{'min':-1e5,'delta':5e3},
+                    'thetav':{'min':220.0,'delta':1.0}
+                    }
+        elif self.dist_def['discretization_type']=='coarse':
+            self.disc_dict={
+                    'latitude':{'min':-90.0,'delta':10.0},
+                    'longitude':{'min':-180.0,'delta':10.0},
+                    'pa':{'min':0.0,'delta':100.0e2}
+                    }
 
     def conversion(self,var):
         if var=='smoist':
@@ -241,9 +285,9 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
         if not out_group_name in output.groups.keys():
             output.createGroup(out_group_name)
         output_checks=output.groups[out_group_name]
-        if not 'checks' in output_checks.groups.keys():
-            output_checks.createGroup('checks')
-        output_checks=output_checks.groups['checks']
+        #if not 'checks' in output_checks.groups.keys():
+        #    output_checks.createGroup('checks')
+        #output_checks=output_checks.groups['checks']
 
         if not time_var in output_checks.dimensions.keys():
             output_checks.createDimension(time_var,len(data_grp.variables[time_var]))
@@ -259,7 +303,7 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
     return
 
 def output_conversion_fluxes(data,output,source_group_name,flux_var,var,fluxes,options,dist_def,source_name,out_name):
-    disc=discretizations_science(dist_def)
+    disc=discretizations_class(dist_def)
 
     if source_group_name in data.groups.keys():
         data_grp=data.groups[source_group_name]
@@ -358,7 +402,7 @@ def output_conversion_mass(data,output,source_group_name,flux_var,var,mass,optio
         output_mass.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
         output_mass.variables[time_var].setncattr('calendar',data_grp.variables[time_var].calendar)
 
-    disc=discretizations_science(dist_def)
+    disc=discretizations_class(dist_def)
     for other_gotvar in dist_def['vars']:
         if (not other_gotvar.capitalize() in output_mass.dimensions.keys()):
             length=dist_def['lengths'][dist_def['vars'].index(other_gotvar)]
@@ -433,7 +477,7 @@ def create_structured_array(data,var,dist_def):
        return list_types
 
 def create_fluxes_mass_science(data,source_group_name,flux_var,var,dist_def):
-    disc=discretizations_science(dist_def[var])
+    disc=discretizations_class(dist_def[var])
 
     list_types=create_structured_array(data.groups[source_group_name],flux_var,dist_def[var])
     fluxes =collapse_dims_last(data.groups[source_group_name],flux_var,dist_def[var]['dims'])
@@ -464,7 +508,7 @@ def create_fluxes_mass_science(data,source_group_name,flux_var,var,dist_def):
     return jd_space
 
 def create_fluxes_science(data,group_name,flux_var,var,dist_def,options):
-    disc=discretizations_science(dist_def[var])
+    disc=discretizations_class(dist_def[var])
 
     list_types=create_structured_array(data.groups[group_name],flux_var,dist_def[var])
     fluxes =collapse_dims_last(data.groups[group_name],flux_var,dist_def[var]['dims'])
@@ -477,11 +521,12 @@ def create_fluxes_science(data,group_name,flux_var,var,dist_def,options):
     checks=dict()
     for gotvar in dist_def[var]['vars']:
         gotvar_n, gotvar_p=values_diff_c_grid(data,dist_def[var],gotvar,dimensions)
-        for checkvar in options.check:
-            if not gotvar in checks.keys():
-                checks[gotvar]=[]
-            checkvar_n, checkvar_p=values_diff_c_grid(data,dist_def[var],checkvar,dimensions)
-            checks[gotvar].append((fluxes*(gotvar_n-gotvar_p)*(0.5*(checkvar_n+checkvar_p))).sum(-1))
+        if 'check' in dir(options): 
+            for checkvar in options.check:
+                if not gotvar in checks.keys():
+                    checks[gotvar]=[]
+                checkvar_n, checkvar_p=values_diff_c_grid(data,dist_def[var],checkvar,dimensions)
+                checks[gotvar].append((fluxes*(gotvar_n-gotvar_p)*(0.5*(checkvar_n+checkvar_p))).sum(-1))
 
         gotvar_p=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_p))
         gotvar_n=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_n))
@@ -840,7 +885,19 @@ F. Laliberte, J. Zika, L. Mudryk, P. J. Kushner, J. Kjellsson, K. Doos, Science.
                       default='smoist,ta',
                       help="coordinates onto which the projection should be performed")
     thermal_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','thetav'],
-                                       help='Compute de global derivatives of the massfluxes multiplied by the check variables.' )
+                                       help='Compute the global derivatives of the massfluxes multiplied by the check variables.' )
+
+    coarse_parser=subparsers.add_parser('coarse_grain',
+                                           description=textwrap.dedent(
+                                                '''Coarse grain fluxes.
+                                                 '''),epilog=epilog
+                                         )
+    generate_subparser(coarse_parser)
+    coarse_parser.add_argument("--divergence",dest="divergence",
+                      default=False, action="store_true",
+                      help="Compute divergence in phase space")
+    coarse_parser.add_argument('-q','--quantity',action='append', type=str, choices=['ke','pe','hmoist','hus','ta','pa','expansion'],
+                                       help='Coarse grain to C-grid.' )
 
     options=parser.parse_args()
 
@@ -850,6 +907,8 @@ F. Laliberte, J. Zika, L. Mudryk, P. J. Kushner, J. Kjellsson, K. Doos, Science.
         generate_test(options)
     elif options.command == "transform_thermal":
         projection_science(options)
+    elif options.command == "coarse_grain":
+        coarse_grain(options)
     return
       
 if __name__ == "__main__":
