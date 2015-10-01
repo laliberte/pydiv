@@ -10,11 +10,11 @@ import pkg_resources
 
 def coarse_grain(options):
     #CONVERT THE DIST VARS TO BIN VALUES AND PUT THEM ALONG THE SAME AXIS
-    lengths = [14,180,36]
+    lengths = [14,36]
     #COMPUTE THE SIZE OF THE PHASE SPACE:
     phase_space_length=compute_phase_space_length(lengths)
 
-    dist_def={ var:{'vars':['pa','latitude','longitude'],
+    dist_def={ var:{'vars':['pa','latitude'],
                 'lengths':lengths,
                 'discretization_type':'coarse',
                 'phase_space_length':phase_space_length} for var in ['dmass','mass','ua','va','wa']}
@@ -42,11 +42,11 @@ def coarse_grain(options):
     dist_def['ua']['bc'] = 'periodic'
     dist_def['wa']['bc'] = 'staggered'
 
-    return perform_transforms(options,dist_def)
+    return perform_transforms(options,dist_def,out_name='coarse_')
 
 def heat_engine_science(options):
     #CONVERT THE DIST VARS TO BIN VALUES AND PUT THEM ALONG THE SAME AXIS
-    lengths = [12,150,75,105]
+    lengths = [12,125,60,48]
     #COMPUTE THE SIZE OF THE PHASE SPACE:
     phase_space_length=compute_phase_space_length(lengths)
 
@@ -78,15 +78,15 @@ def heat_engine_science(options):
     dist_def['ua']['bc'] = 'periodic'
     dist_def['wa']['bc'] = 'staggered'
 
-    return perform_transforms(options,dist_def)
+    return perform_transforms(options,dist_def,out_name='tt_')
 
 def projection_science(options):
     #CONVERT THE DIST VARS TO BIN VALUES AND PUT THEM ALONG THE SAME AXIS
-    lengths_dict = { 'smoist,ta': [12,150,120],
-                     'hus,gh_gc': [12,75,120],
-                     'hus,gc_gv': [12,75,120],
-                     'hus,gd': [12,75,120],
-                     'pa,thetav': [12,105,150]}
+    lengths_dict = { 'smoist,ta': [12,125,120],
+                     'hus,gh_gc': [12,60,120],
+                     'hus,gc_gv': [12,60,120],
+                     'hus,gd': [12,60,120],
+                     'pa,thetav': [12,48,125]}
     lengths=lengths_dict[options.coordinates]
     #COMPUTE THE SIZE OF THE PHASE SPACE:
     phase_space_length=compute_phase_space_length(lengths)
@@ -96,12 +96,12 @@ def projection_science(options):
                 'discretization_type':'science',
                 'phase_space_length':phase_space_length} for var in ['dmass','mass','latitude','smoist','pa','hus']}
 
-    dist_def['dmass']['dims'] = ['Longitude','Smoist','Hus','Pa']
-    dist_def['mass']['dims'] = ['Longitude','Smoist','Hus','Pa']
-    dist_def['latitude']['dims'] = ['sLongitude','Smoist','Hus','Pa']
-    dist_def['smoist']['dims'] = ['Longitude','sSmoist','Hus','Pa']
-    dist_def['hus']['dims'] = ['Longitude','Smoist','sHus','Pa']
-    dist_def['pa']['dims'] = ['Longitude','Smoist','Hus','sPa']
+    dist_def['dmass']['dims'] = ['Latitude','Smoist','Hus','Pa']
+    dist_def['mass']['dims'] = ['Latitude','Smoist','Hus','Pa']
+    dist_def['latitude']['dims'] = ['sLatitude','Smoist','Hus','Pa']
+    dist_def['smoist']['dims'] = ['Latitude','sSmoist','Hus','Pa']
+    dist_def['hus']['dims'] = ['Latitude','Smoist','sHus','Pa']
+    dist_def['pa']['dims'] = ['Latitude','Smoist','Hus','sPa']
 
     dist_def['dmass']['time_type'] = 'full'
     dist_def['mass']['time_type'] = 'full'
@@ -142,30 +142,49 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
         sub_var_list=[flux_var for flux_var in data.groups[group_name].variables.keys() if
                                 set(data.groups[group_name].variables[flux_var].dimensions).issuperset(dist_def[var]['dims'])]
         for flux_var in sub_var_list:
-            if dist_def[var]['bc'] != 'constant':
-                jd_space, checks=create_fluxes_science(data,group_name,flux_var,var,dist_def,options)
-                fluxes = np.apply_along_axis(compute_vector_jd_got,-1,
-                                                 jd_space,
-                                                 dist_def[var])
-                output_conversion_fluxes(data,output,group_name,flux_var,var,fluxes,options,dist_def[var],source_name,out_name)
-                if not 'weight' in flux_var.split('_'):
-                    output_conversion_checks(data,output,group_name,flux_var,var,checks,options,source_name,out_name)
-                output.sync()
+            perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,options,source_name,out_name)
+            if 'quantity' in dir(options):
+                for quantity in options.quantity:
+                    perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,options,source_name,out_name+quantity+'_',quantity=quantity)
 
-            if var in ['mass','dmass']:
-                jd_space=create_fluxes_mass_science(data,group_name,flux_var,var,dist_def)
-                mass = np.apply_along_axis(compute_vector_jd,-1,
-                                                 jd_space,
-                                                 dist_def[var])
-                output_conversion_mass(data,output,group_name,flux_var,var,mass,options,dist_def[var],source_name,out_name)
-                output.sync()
+    if 'quantity' in dir(options):
+        for quantity in options.quantity:
+            compute_sum_massfluxes(output,dist_def,out_name+quantity+'_',options)
+    compute_sum_massfluxes(output,dist_def,out_name,options)
+        
+    if options.divergence:
+        compute_divergence(output,dist_def,out_name,options)
+    output.close()           
+    return
 
+def perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,options,source_name,out_name,quantity=''):
+    if dist_def[var]['bc'] != 'constant':
+        jd_space, checks=create_fluxes_science(data,group_name,flux_var,var,dist_def,options,quantity=quantity)
+        fluxes = np.apply_along_axis(compute_vector_jd_got,-1,
+                                         jd_space,
+                                         dist_def[var])
+        output_conversion_fluxes(data,output,group_name,flux_var,var,fluxes,options,dist_def[var],source_name,out_name)
+        output.sync()
+        if not 'weight' in flux_var.split('_'):
+            output_conversion_checks(data,output,group_name,flux_var,var,checks,options,source_name,out_name)
+        output.sync()
+
+    if var in ['mass','dmass']:
+        jd_space=create_fluxes_mass_science(data,group_name,flux_var,var,dist_def,quantity=quantity)
+        mass = np.apply_along_axis(compute_vector_jd,-1,
+                                         jd_space,
+                                         dist_def[var])
+        output_conversion_mass(data,output,group_name,flux_var,var,mass,options,dist_def[var],source_name,out_name)
+        output.sync()
+    return
+
+def compute_sum_massfluxes(output,dist_def,out_name,options):
     var_ref=dist_def.keys()[0]
     for gotvar_id,gotvar in enumerate(dist_def[var_ref]['vars']):
         dims=['s'+var.capitalize() if var==gotvar else var.capitalize() for var in dist_def[var_ref]['vars']]
-        out_group_name='massfluxes_tt_'+out_name+gotvar
+        out_group_name='massfluxes_'+out_name+gotvar
         output_grp=output.groups[out_group_name]
-        excluded_keywords=['sum','weight','check','diff','quantity']
+        excluded_keywords=['sum','weight','check','diff']
         var_list=[var for var in output.groups[out_group_name].variables.keys() if 
                                  ( set(output.groups[out_group_name].variables[var].dimensions).issuperset(dims) and
                                    len(set(var.split('_')).intersection(excluded_keywords))==0 )]
@@ -177,48 +196,48 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
         output_grp.variables['massfluxes_sum'][:]=temp
         output_grp.variables['massfluxes_sum'].setncattr('formula','+'.join(var_list))
         output.sync()
-        
-    if options.divergence:
-        #Compute divergence in thermal space:
-        var_ref=dist_def.keys()[0]
-        for gotvar_id,gotvar in enumerate(dist_def[var_ref]['vars']):
-            source_group_name='massfluxes_tt_'+out_name+gotvar
-            output_grp=output.groups[source_group_name]
-            var_list=[var for var in output_grp.variables.keys() if 
-                                 var.split('_')[-1]=='diff' ]
-            if gotvar_id==0:
-                temp=np.zeros(output_grp.variables[var_list[0]].shape)
-                dims=output_grp.variables[var_list[0]].dimensions
-            for var in var_list:
-                temp+=output_grp.variables[var][:]
+    return
 
-        out_group_name='massfluxes_tt_'+out_name+'divergence' 
-        if not out_group_name in output.groups.keys():
-            output.createGroup(out_group_name)
-        output_div=output.groups[out_group_name]
+def compute_divergence(output,dist_def,out_name,options):
+    #Compute divergence in thermal space:
+    var_ref=dist_def.keys()[0]
+    for gotvar_id,gotvar in enumerate(dist_def[var_ref]['vars']):
+        source_group_name='massfluxes_'+out_name+gotvar
+        output_grp=output.groups[source_group_name]
+        var_list=[var for var in output_grp.variables.keys() if 
+                             var.split('_')[-1]=='diff' ]
+        if gotvar_id==0:
+            temp=np.zeros(output_grp.variables[var_list[0]].shape)
+            dims=output_grp.variables[var_list[0]].dimensions
+        for var in var_list:
+            temp+=output_grp.variables[var][:]
 
-        time_var='time'
-        if not time_var in output_div.dimensions.keys():
-            output_div.createDimension(time_var,len(output_grp.variables[time_var]))
-            output_div.createVariable(time_var,'d',(time_var,))
-            output_div.variables[time_var][:]=output_grp.variables[time_var][:]
-            output_div.variables[time_var].setncattr('units',output_grp.variables[time_var].units)
-            output_div.variables[time_var].setncattr('calendar',output_grp.variables[time_var].calendar)
+    out_group_name='massfluxes_'+out_name+'divergence' 
+    if not out_group_name in output.groups.keys():
+        output.createGroup(out_group_name)
+    output_div=output.groups[out_group_name]
 
-        disc=discretizations_class(dist_def[dist_def.keys()[0]])
+    time_var='time'
+    if not time_var in output_div.dimensions.keys():
+        output_div.createDimension(time_var,len(output_grp.variables[time_var]))
+        output_div.createVariable(time_var,'d',(time_var,))
+        output_div.variables[time_var][:]=output_grp.variables[time_var][:]
+        output_div.variables[time_var].setncattr('units',output_grp.variables[time_var].units)
+        output_div.variables[time_var].setncattr('calendar',output_grp.variables[time_var].calendar)
 
-        for other_gotvar in dist_def[dist_def.keys()[0]]['vars']:
-            if (not other_gotvar.capitalize() in output_div.dimensions.keys()):
-                length=dist_def[dist_def.keys()[0]]['lengths'][dist_def[dist_def.keys()[0]]['vars'].index(other_gotvar)]
-                output_div.createDimension(other_gotvar.capitalize(),length)
-                output_div.createVariable(other_gotvar.capitalize(),'d',(other_gotvar.capitalize(),))
+    disc=discretizations_class(dist_def[dist_def.keys()[0]])
 
-                output_div.variables[other_gotvar.capitalize()][:]=disc.inv_conversion(other_gotvar)(disc.inv_discretization(other_gotvar)(np.arange(0,length)+0.5))
-        output_div.createVariable('divergence','f',dims,zlib=options.compression)
-        output_div.variables['divergence'][:]=temp
+    for other_gotvar in dist_def[dist_def.keys()[0]]['vars']:
+        if (not other_gotvar.capitalize() in output_div.dimensions.keys()):
+            length=dist_def[dist_def.keys()[0]]['lengths'][dist_def[dist_def.keys()[0]]['vars'].index(other_gotvar)]
+            output_div.createDimension(other_gotvar.capitalize(),length)
+            output_div.createVariable(other_gotvar.capitalize(),'d',(other_gotvar.capitalize(),))
 
-        output.sync()
-    output.close()           
+            output_div.variables[other_gotvar.capitalize()][:]=disc.inv_conversion(other_gotvar)(disc.inv_discretization(other_gotvar)(np.arange(0,length)+0.5))
+    output_div.createVariable('divergence','f',dims,zlib=options.compression)
+    output_div.variables['divergence'][:]=temp
+
+    output.sync()
     return
 
 class discretizations_class():
@@ -230,14 +249,14 @@ class discretizations_class():
         if self.dist_def['discretization_type']=='science':
             self.disc_dict={
                     'latitude':{'min':-90.0,'delta':15.0},
-                    'smoist':{'min':220.0,'delta':1.0},
+                    'smoist':{'min':245.0,'delta':1.0},
                     'hus':{'min':0.0,'delta':1.0},
-                    'pa':{'min':10.0e2,'delta':10.0e2},
+                    'pa':{'min':100.0e2,'delta':20.0e2},
                     'ta':{'min':200.0,'delta':1.0},
                     'gh_gc':{'min':-1e5,'delta':5e3},
                     'gc_gv':{'min':-1e5,'delta':5e3},
                     'gd':{'min':-1e5,'delta':5e3},
-                    'thetav':{'min':220.0,'delta':1.0}
+                    'thetav':{'min':245.0,'delta':1.0}
                     }
         elif self.dist_def['discretization_type']=='coarse':
             self.disc_dict={
@@ -281,7 +300,7 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
     time_var='time'
 
     for gotvar in checks.keys():
-        out_group_name='massfluxes_tt_'+out_name+gotvar
+        out_group_name='massfluxes_'+out_name+gotvar
         if not out_group_name in output.groups.keys():
             output.createGroup(out_group_name)
         output_checks=output.groups[out_group_name]
@@ -296,9 +315,10 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
             output_checks.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
             output_checks.variables[time_var].setncattr('calendar',data_grp.variables[time_var].calendar)
 
-        for checkvar_id, checkvar in enumerate(options.check):
-            temp=output_checks.createVariable(flux_var+'_check_'+checkvar,'f',(time_var,))
-            temp[:]=checks[gotvar][checkvar_id]
+        if ('check' in dir(options) and options.check!=None): 
+            for checkvar_id, checkvar in enumerate(options.check):
+                temp=output_checks.createVariable(flux_var+'_check_'+checkvar,'f',(time_var,))
+                temp[:]=checks[gotvar][checkvar_id]
     output.sync()
     return
 
@@ -317,7 +337,7 @@ def output_conversion_fluxes(data,output,source_group_name,flux_var,var,fluxes,o
 
 
     for gotvar in fluxes.dtype.names:
-        out_group_name='massfluxes_tt_'+out_name+gotvar
+        out_group_name='massfluxes_'+out_name+gotvar
         if not out_group_name in output.groups.keys():
             output.createGroup(out_group_name)
         output_fluxes=output.groups[out_group_name]
@@ -379,9 +399,9 @@ def output_conversion_fluxes(data,output,source_group_name,flux_var,var,fluxes,o
 
 def output_conversion_mass(data,output,source_group_name,flux_var,var,mass,options,dist_def,source_name,out_name):
     if var=='dmass':
-        out_group_name='massfluxes_tt_'+out_name+var
+        out_group_name='massfluxes_'+out_name+var
     else:
-        out_group_name='masstendency_tt_'+out_name+var
+        out_group_name='masstendency_'+out_name+var
 
     if not out_group_name in output.groups.keys():
         output.createGroup(out_group_name)
@@ -476,7 +496,7 @@ def create_structured_array(data,var,dist_def):
             list_types.append((gotvar+'_SUM',np.float))
        return list_types
 
-def create_fluxes_mass_science(data,source_group_name,flux_var,var,dist_def):
+def create_fluxes_mass_science(data,source_group_name,flux_var,var,dist_def,quantity=''):
     disc=discretizations_class(dist_def[var])
 
     list_types=create_structured_array(data.groups[source_group_name],flux_var,dist_def[var])
@@ -505,9 +525,20 @@ def create_fluxes_mass_science(data,source_group_name,flux_var,var,dist_def):
                                 collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:],
                                                      data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
                                         ))
+    if quantity!='':
+        jd_space['flux']*=(
+                            collapse_dims_last_var(data.groups[quantity].variables[quantity][:-1,...],
+                                                 data.groups[quantity].variables[quantity].dimensions ,dimensions)
+                         )
+            #+
+            #disc.discretization(quantity)(disc.conversion(quantity)(
+            #                    collapse_dims_last_var(data.groups[quantity].variables[quantity][1:,...],
+            #                                         data.groups[quantity].variables[quantity].dimensions ,dimensions)
+            #                            ))
+            #                  )
     return jd_space
 
-def create_fluxes_science(data,group_name,flux_var,var,dist_def,options):
+def create_fluxes_science(data,group_name,flux_var,var,dist_def,options,quantity=''):
     disc=discretizations_class(dist_def[var])
 
     list_types=create_structured_array(data.groups[group_name],flux_var,dist_def[var])
@@ -521,12 +552,15 @@ def create_fluxes_science(data,group_name,flux_var,var,dist_def,options):
     checks=dict()
     for gotvar in dist_def[var]['vars']:
         gotvar_n, gotvar_p=values_diff_c_grid(data,dist_def[var],gotvar,dimensions)
-        if 'check' in dir(options): 
+        if ('check' in dir(options) and options.check!=None): 
             for checkvar in options.check:
                 if not gotvar in checks.keys():
                     checks[gotvar]=[]
                 checkvar_n, checkvar_p=values_diff_c_grid(data,dist_def[var],checkvar,dimensions)
                 checks[gotvar].append((fluxes*(gotvar_n-gotvar_p)*(0.5*(checkvar_n+checkvar_p))).sum(-1))
+        if quantity!='':
+            quantityvar_n, quantityvar_p=values_diff_c_grid(data,dist_def[var],quantity,dimensions)
+            jd_space['flux']*=0.5*(quantityvar_n+quantityvar_p)
 
         gotvar_p=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_p))
         gotvar_n=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_n))
@@ -570,7 +604,6 @@ def got_digitize_floor(array,length):
     out=np.rint(np.floor(array))
     out[out<0]=0
     out[out>length-1]=length-1
-    #out[out>length]=length
     return out
 
 def compute_vector_jd_got(jd_space,dist_def):
@@ -583,6 +616,8 @@ def compute_vector_jd_got(jd_space,dist_def):
             binning_mask = create_binning_mask(dist_def,jd_space,gotvar)
             if np.any(binning_mask):
                 jd_space, jd_out = bin_gotvar_over_mask(dist_def,jd_space,jd_out,gotvar,binning_mask)
+                #for gotvar in dist_def['vars']:
+                #    jd_out[gotvar]+=jd_out_tmp[gotvar]
     return jd_out
 
 def create_binning_mask(dist_def,jd_space,gotvar):
@@ -615,6 +650,10 @@ def bin_gotvar_over_mask(dist_def,jd_space,jd_out,gotvar,binning_mask):
 
     #SETUP THE INVERSION
     temp_data = jd_space['flux'][binning_mask]*jd_space[gotvar+'_MASK'][binning_mask]
+
+    #CREATE OUPTUT:
+    #list_types=[(gotvar,np.float) for gotvar in dist_def['vars']]
+    #jd_out=np.zeros((dist_def['phase_space_length']+1,),list_types)
 
     #DO THE COMPUTATION USING NP.BINCOUNT
     jd_out[gotvar] += np.bincount(bin_array,
