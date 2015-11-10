@@ -137,6 +137,8 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
         print var
         if var =='mass':
             group_name='masstendency_'+source_name+var
+        elif var=='dmass':
+            group_name='sources_'+source_name+var
         else:
             group_name='massfluxes_'+source_name+var
         sub_var_list=[flux_var for flux_var in data.groups[group_name].variables.keys() if
@@ -159,22 +161,30 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
 
 def perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,options,source_name,out_name,quantity=''):
     if dist_def[var]['bc'] != 'constant':
-        jd_space, checks=create_fluxes_science(data,group_name,flux_var,var,dist_def,options,quantity=quantity)
+        jd_space, checks=create_massfluxes_science(data,group_name,flux_var,var,dist_def,options,quantity=quantity)
         fluxes = np.apply_along_axis(compute_vector_jd_got,-1,
                                          jd_space,
                                          dist_def[var])
-        output_conversion_fluxes(data,output,group_name,flux_var,var,fluxes,options,dist_def[var],source_name,out_name)
+        output_conversion_massfluxes(data,output,group_name,flux_var,var,fluxes,options,dist_def[var],source_name,out_name)
         output.sync()
         if not 'weight' in flux_var.split('_'):
             output_conversion_checks(data,output,group_name,flux_var,var,checks,options,source_name,out_name)
         output.sync()
 
-    if var in ['mass','dmass']:
-        jd_space=create_fluxes_mass_science(data,group_name,flux_var,var,dist_def,quantity=quantity)
+    if var in ['mass']:
+        jd_space=create_masstendency_science(data,group_name,flux_var,var,dist_def,quantity=quantity)
         mass = np.apply_along_axis(compute_vector_jd,-1,
                                          jd_space,
                                          dist_def[var])
-        output_conversion_mass(data,output,group_name,flux_var,var,mass,options,dist_def[var],source_name,out_name)
+        output_conversion_masstendency(data,output,group_name,flux_var,var,mass,options,dist_def[var],source_name,out_name)
+        output.sync()
+
+    if var in ['dmass']:
+        jd_space=create_sources_science(data,group_name,flux_var,var,dist_def,quantity=quantity)
+        mass = np.apply_along_axis(compute_vector_jd,-1,
+                                         jd_space,
+                                         dist_def[var])
+        output_conversion_sources(data,output,group_name,flux_var,var,mass,options,dist_def[var],source_name,out_name)
         output.sync()
     return
 
@@ -322,7 +332,7 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
     output.sync()
     return
 
-def output_conversion_fluxes(data,output,source_group_name,flux_var,var,fluxes,options,dist_def,source_name,out_name):
+def output_conversion_massfluxes(data,output,source_group_name,flux_var,var,fluxes,options,dist_def,source_name,out_name):
     disc=discretizations_class(dist_def)
 
     if source_group_name in data.groups.keys():
@@ -397,11 +407,8 @@ def output_conversion_fluxes(data,output,source_group_name,flux_var,var,fluxes,o
             output.sync()
     return
 
-def output_conversion_mass(data,output,source_group_name,flux_var,var,mass,options,dist_def,source_name,out_name):
-    if var=='dmass':
-        out_group_name='massfluxes_'+out_name+var
-    else:
-        out_group_name='masstendency_'+out_name+var
+def output_conversion_masstendency(data,output,source_group_name,flux_var,var,mass,options,dist_def,source_name,out_name):
+    out_group_name='masstendency_'+out_name+var
 
     if not out_group_name in output.groups.keys():
         output.createGroup(out_group_name)
@@ -440,7 +447,7 @@ def output_conversion_mass(data,output,source_group_name,flux_var,var,mass,optio
                                     np.reshape(mass,tuple(shape),order='F'),axis=tuple(range(1,len(mass.shape)-1)))
     output.sync()
 
-    if options.divergence and not 'weight' in flux_var.split('_') and var!='dmass':
+    if options.divergence and not 'weight' in flux_var.split('_'):
         phase_space_dims=tuple([ps_dim.capitalize() for ps_dim in dist_def['vars']])
         output_mass.createVariable(flux_var+'_diff','f',(time_var,)+phase_space_dims,zlib=options.compression)
         shape=list(mass.shape[:-1]+output_mass.variables[flux_var].shape[-len(dist_def['vars']):])
@@ -453,6 +460,47 @@ def output_conversion_mass(data,output,source_group_name,flux_var,var,mass,optio
                                             ,axis=tuple(range(1,len(mass.shape)-1)))
         output_mass.variables[flux_var+'_diff'][-1,...]=0.0
         output.sync()
+    return
+
+def output_conversion_sources(data,output,source_group_name,flux_var,var,sources,options,dist_def,source_name,out_name):
+    out_group_name='sources_'+out_name+var
+
+    if not out_group_name in output.groups.keys():
+        output.createGroup(out_group_name)
+    output_sources=output.groups[out_group_name]
+
+    if source_group_name in data.groups.keys():
+        data_grp=data.groups[source_group_name]
+    else:
+        data_grp=data.groups[var]
+    for time_type in ['time','stime']:
+        if time_type in data_grp.dimensions.keys():
+            time_var=time_type
+
+    if not time_var in output_sources.dimensions.keys():
+        output_sources.createDimension(time_var,len(data_grp.variables[time_var]))
+        output_sources.createVariable(time_var,'d',(time_var,))
+        output_sources.variables[time_var][:]=data_grp.variables[time_var][:]
+        output_sources.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
+        output_sources.variables[time_var].setncattr('calendar',data_grp.variables[time_var].calendar)
+
+    disc=discretizations_class(dist_def)
+    for other_gotvar in dist_def['vars']:
+        if (not other_gotvar.capitalize() in output_sources.dimensions.keys()):
+            length=dist_def['lengths'][dist_def['vars'].index(other_gotvar)]
+            output_sources.createDimension(other_gotvar.capitalize(),length)
+            output_sources.createVariable(other_gotvar.capitalize(),'d',(other_gotvar.capitalize(),))
+
+            output_sources.variables[other_gotvar.capitalize()][:]=disc.inv_conversion(other_gotvar)(disc.inv_discretization(other_gotvar)(np.arange(0,length)+0.5))
+    
+    phase_space_dims=tuple([ps_dim.capitalize() for ps_dim in dist_def['vars']])
+    output_sources.createVariable(flux_var,'f',(time_var,)+phase_space_dims,zlib=options.compression)
+
+    shape=list(sources.shape[:-1]+output_sources.variables[flux_var].shape[-len(dist_def['vars']):])
+
+    output_sources.variables[flux_var][:]=np.sum(
+                                    np.reshape(sources,tuple(shape),order='F'),axis=tuple(range(1,len(sources.shape)-1)))
+    output.sync()
     return
 
 def discretize_max(x,max):
@@ -496,7 +544,7 @@ def create_structured_array(data,var,dist_def):
             list_types.append((gotvar+'_SUM',np.float))
        return list_types
 
-def create_fluxes_mass_science(data,source_group_name,flux_var,var,dist_def,quantity=''):
+def create_masstendency_science(data,source_group_name,flux_var,var,dist_def,quantity=''):
     disc=discretizations_class(dist_def[var])
 
     list_types=create_structured_array(data.groups[source_group_name],flux_var,dist_def[var])
@@ -513,7 +561,31 @@ def create_fluxes_mass_science(data,source_group_name,flux_var,var,dist_def,quan
                                 collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:-1,...],
                                                      data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
                                         ))
-    elif dist_def[var]['time_type']=='centre':
+    elif dist_def[var]['time_type']=='full':
+        for gotvar in dist_def[var]['vars']:
+            jd_space[gotvar]=disc.discretization(gotvar)(disc.conversion(gotvar)(
+                                collapse_dims_last_var(data.groups[gotvar].variables[gotvar][:],
+                                                     data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
+                                        ))
+    if quantity!='':
+        jd_space['flux']*=(
+                            collapse_dims_last_var(data.groups[quantity].variables[quantity][:-1,...],
+                                                 data.groups[quantity].variables[quantity].dimensions ,dimensions)
+                         )
+    return jd_space
+
+def create_sources_science(data,source_group_name,flux_var,var,dist_def,quantity=''):
+    disc=discretizations_class(dist_def[var])
+
+    list_types=create_structured_array(data.groups[source_group_name],flux_var,dist_def[var])
+    fluxes =collapse_dims_last(data.groups[source_group_name],flux_var,dist_def[var]['dims'])
+
+    jd_space=np.zeros(fluxes.shape,dtype=list_types)
+    jd_space['flux']=fluxes
+
+    dimensions=[dim[1:] if dim[0]=='s' else dim for dim in dist_def[var]['dims'] ]
+
+    if dist_def[var]['time_type']=='centre':
         for gotvar in dist_def[var]['vars']:
             jd_space[gotvar]=disc.discretization(gotvar)(disc.conversion(gotvar)(
                                 collapse_dims_last_var(data.groups[gotvar].variables[gotvar][1:,...],
@@ -530,15 +602,9 @@ def create_fluxes_mass_science(data,source_group_name,flux_var,var,dist_def,quan
                             collapse_dims_last_var(data.groups[quantity].variables[quantity][:-1,...],
                                                  data.groups[quantity].variables[quantity].dimensions ,dimensions)
                          )
-            #+
-            #disc.discretization(quantity)(disc.conversion(quantity)(
-            #                    collapse_dims_last_var(data.groups[quantity].variables[quantity][1:,...],
-            #                                         data.groups[quantity].variables[quantity].dimensions ,dimensions)
-            #                            ))
-            #                  )
     return jd_space
 
-def create_fluxes_science(data,group_name,flux_var,var,dist_def,options,quantity=''):
+def create_massfluxes_science(data,group_name,flux_var,var,dist_def,options,quantity=''):
     disc=discretizations_class(dist_def[var])
 
     list_types=create_structured_array(data.groups[group_name],flux_var,dist_def[var])
@@ -716,12 +782,12 @@ def collapse_dims_last_var(temp,temp_dims,dist_dims):
 def replicate_netcdf_file(output,data):
 	for att in data.ncattrs():
             att_val=getattr(data,att)
+            if att=='history':
+                att_val+='\n' 
+                att_val+='joint_distribution '+pkg_resources.get_distribution('pydiv').version
             if 'encode' in dir(att_val):
                 att_val=att_val.encode('ascii','replace')
 	    setattr(output,att,att_val)
-        output.history+='\n' 
-        #output.history+=dt.datetime.now().strftime('%Y-%m-%d %H:%M') #Add time
-        output.history+='joint_distribution '+pkg_resources.get_distribution('pydiv').version
 	return output
 
 def replicate_netcdf_var(output,data,var):
