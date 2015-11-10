@@ -38,9 +38,13 @@ def multiply_by_area(options):
     replicate_netcdf_file(output,data)
     lengths=spherical_tools.coords(data)
 
-    for var in ['wa','mass','weight_wa']:
+    var_list=['wa','mass','weight_wa']
+    for var in var_list:
         replicate_netcdf_var(output,data,var)
-        output.variables[var][:]=data.variables[var][:]*np.reshape(lengths.area_lat_lon,(1,1,)+data.variables[var].shape[-2:])
+        if var=='wa' and options.no_wa:
+            output.variables[var][:]=data.variables[var][:]
+        else:
+            output.variables[var][:]=data.variables[var][:]*np.reshape(lengths.area_lat_lon,(1,1,)+data.variables[var].shape[-2:])
         output.sync()
     data.close()
     return output
@@ -312,6 +316,7 @@ def main():
                                            epilog=epilog,
                                            formatter_class=argparse.RawTextHelpFormatter)
     input_arguments(weight2_parser)
+    weight2_parser.add_argument('--no_wa',default=False,action='store_true',help='Do not weight wa.')
 
     options=parser.parse_args()
 
