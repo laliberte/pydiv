@@ -131,6 +131,7 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
 
     output = Dataset(options.out_netcdf_file,'w',format='NETCDF4')
     output = replicate_netcdf_file(output,data)
+    output.sync()
 
     var_list=dist_def.keys()
     for var in var_list:
@@ -417,7 +418,7 @@ def output_conversion_mass(data,output,source_group_name,flux_var,var,mass,optio
 
     if not time_var in output_mass.dimensions.keys():
         output_mass.createDimension(time_var,len(data_grp.variables[time_var]))
-        output_mass.createVariable(time_var,'d',(time_var,))
+        temp=output_mass.createVariable(time_var,'d',(time_var,))
         output_mass.variables[time_var][:]=data_grp.variables[time_var][:]
         output_mass.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
         output_mass.variables[time_var].setncattr('calendar',data_grp.variables[time_var].calendar)
@@ -644,8 +645,8 @@ def bin_gotvar_over_mask(dist_def,jd_space,jd_out,gotvar,binning_mask):
     #print jd_space.dtype,jd_space
     bin_array = np.zeros_like(jd_space['flux'][binning_mask], dtype=int)
     for nv,dvar in enumerate(dist_def['vars']):
-        bin_array+=np.prod(dist_def['lengths'][0:nv])*\
-                           got_digitize_floor(jd_space[dvar][binning_mask]+jd_space[dvar+'_SUM'][binning_mask],dist_def['lengths'][nv])
+        bin_array+=(np.prod(dist_def['lengths'][0:nv])*\
+                           got_digitize_floor(jd_space[dvar][binning_mask]+jd_space[dvar+'_SUM'][binning_mask],dist_def['lengths'][nv])).astype(int)
     if dist_def['phase_space_length'] < bin_array.max(): raise IOError('number of actual bins is larger than expected output')
 
     #SETUP THE INVERSION
@@ -675,8 +676,8 @@ def bin_var(dist_def,jd_space):
     #CREATE BIN ARRAY
     bin_array = np.zeros_like(jd_space['flux'], dtype=int)
     for nv,dvar in enumerate(dist_def['vars']):
-        bin_array+=np.prod(dist_def['lengths'][0:nv])*\
-                           got_digitize_floor(jd_space[dvar],dist_def['lengths'][nv])
+        bin_array+=(np.prod(dist_def['lengths'][0:nv])*\
+                           got_digitize_floor(jd_space[dvar],dist_def['lengths'][nv])).astype(int)
     if dist_def['phase_space_length'] < bin_array.max(): raise IOError('number of actual bins is larger than expected output')
 
     #SETUP THE INVERSION
@@ -718,10 +719,10 @@ def replicate_netcdf_file(output,data):
             att_val=getattr(data,att)
             if 'encode' in dir(att_val):
                 att_val=att_val.encode('ascii','replace')
-	    setattr(output,att,att_val)
-        output.history+='\n' 
-        #output.history+=dt.datetime.now().strftime('%Y-%m-%d %H:%M') #Add time
-        output.history+='joint_distribution '+pkg_resources.get_distribution('pydiv').version
+            if att!='history':
+                output.setncattr(att,att_val)
+            else:
+                output.setncattr(att,att_val+'\n'+'joint_distribution '+pkg_resources.get_distribution('pydiv').version)
 	return output
 
 def replicate_netcdf_var(output,data,var):
