@@ -270,7 +270,7 @@ class discretizations_class():
                     }
         elif self.dist_def['discretization_type']=='coarse':
             self.disc_dict={
-                    'latitude':{'min':-90.0,'delta':10.0},
+                    'latitude':{'min':-90.0,'delta':5.0},
                     'longitude':{'min':-180.0,'delta':10.0},
                     'pa':{'min':0.0,'delta':100.0e2}
                     }
@@ -631,10 +631,16 @@ def create_massfluxes_science(data,group_name,flux_var,var,dist_def,options,quan
         gotvar_p=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_p))
         gotvar_n=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_n))
 
-        jd_space[gotvar]=gotvar_p
-        jd_space[gotvar+'_MASK']=np.sign(gotvar_n-gotvar_p)
-        jd_space[gotvar+'_TOTAL']=gotvar_n-gotvar_p
-        jd_space[gotvar+'_SUM']=np.zeros(jd_space[gotvar+'_MASK'].shape)
+        if not 'weight' in flux_var.split('_'):
+            jd_space[gotvar]=gotvar_p
+            jd_space[gotvar+'_MASK']=np.sign(gotvar_n-gotvar_p)
+            jd_space[gotvar+'_TOTAL']=gotvar_n-gotvar_p
+            jd_space[gotvar+'_SUM']=np.zeros(jd_space[gotvar+'_MASK'].shape)
+        else:
+            jd_space[gotvar]=np.minimum(gotvar_p,gotvar_n)
+            jd_space[gotvar+'_MASK']=np.abs(np.sign(gotvar_n-gotvar_p))
+            jd_space[gotvar+'_TOTAL']=np.abs(gotvar_n-gotvar_p)
+            jd_space[gotvar+'_SUM']=np.zeros(jd_space[gotvar+'_MASK'].shape)
 
     return jd_space, checks
 
