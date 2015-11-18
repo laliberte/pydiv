@@ -8,9 +8,12 @@ import datetime as dt
 import copy
 import pkg_resources
 
+
+rsphere=6.3712e6
+
 def coarse_grain(options):
     #CONVERT THE DIST VARS TO BIN VALUES AND PUT THEM ALONG THE SAME AXIS
-    lengths = [14,36]
+    lengths = [12,36]
     #COMPUTE THE SIZE OF THE PHASE SPACE:
     phase_space_length=compute_phase_space_length(lengths)
 
@@ -568,10 +571,10 @@ def create_masstendency_science(data,source_group_name,flux_var,var,dist_def,qua
                                                      data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
                                         ))
     if quantity!='':
-        jd_space['flux']*=(
+        jd_space['flux']=fluxes*np.ma.filled((
                             collapse_dims_last_var(data.groups[quantity].variables[quantity][:-1,...],
                                                  data.groups[quantity].variables[quantity].dimensions ,dimensions)
-                         )
+                         ),fill_value=0.0)
     return jd_space
 
 def create_sources_science(data,source_group_name,flux_var,var,dist_def,quantity=''):
@@ -598,10 +601,10 @@ def create_sources_science(data,source_group_name,flux_var,var,dist_def,quantity
                                                      data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
                                         ))
     if quantity!='':
-        jd_space['flux']*=(
+        jd_space['flux']=fluxes*np.ma.filled((
                             collapse_dims_last_var(data.groups[quantity].variables[quantity][:-1,...],
                                                  data.groups[quantity].variables[quantity].dimensions ,dimensions)
-                         )
+                         ),fill_value=0.0)
     return jd_space
 
 def create_massfluxes_science(data,group_name,flux_var,var,dist_def,options,quantity=''):
@@ -626,7 +629,7 @@ def create_massfluxes_science(data,group_name,flux_var,var,dist_def,options,quan
                 checks[gotvar].append((fluxes*(gotvar_n-gotvar_p)*(0.5*(checkvar_n+checkvar_p))).sum(-1))
         if quantity!='':
             quantityvar_n, quantityvar_p=values_diff_c_grid(data,dist_def[var],quantity,dimensions)
-            jd_space['flux']*=0.5*(quantityvar_n+quantityvar_p)
+            jd_space['flux']=0.5*np.ma.filled(quantityvar_n+quantityvar_p,fill_value=0.0)*fluxes
 
         gotvar_p=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_p))
         gotvar_n=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_n))
@@ -648,12 +651,12 @@ def values_diff_c_grid(data,dist_def,gotvar,dimensions):
     if dist_def['bc']=='staggered':
         gotvar_n=collapse_dims_last_var(
                                         np.take(data.groups[gotvar].variables[gotvar],
-                                                np.arange(data.groups[gotvar].variables[gotvar].shape[dist_def['axis']])[1:],
+                                                np.ma.arange(data.groups[gotvar].variables[gotvar].shape[dist_def['axis']])[1:],
                                                 axis=dist_def['axis']),
                                          data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
         gotvar_p=collapse_dims_last_var(
                                         np.take(data.groups[gotvar].variables[gotvar],
-                                                np.arange(data.groups[gotvar].variables[gotvar].shape[dist_def['axis']])[:-1],
+                                                np.ma.arange(data.groups[gotvar].variables[gotvar].shape[dist_def['axis']])[:-1],
                                                 axis=dist_def['axis']),
                                          data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
     elif dist_def['bc']=='constant':
@@ -670,6 +673,10 @@ def values_diff_c_grid(data,dist_def,gotvar,dimensions):
     if dist_def['axis']!=0 and dist_def['time_type']!='full':
         gotvar_n=gotvar_n[1:,...]
         gotvar_p=gotvar_p[1:,...]
+
+    if '_FillValue' in data.groups[gotvar].variables[gotvar].ncattrs():
+        gotvar_n=np.where(gotvar_n==data.groups[gotvar].variables[gotvar]._FillValue,0.0,gotvar_n)
+        gotvar_p=np.where(gotvar_p==data.groups[gotvar].variables[gotvar]._FillValue,0.0,gotvar_p)
     return gotvar_n, gotvar_p
 
 def got_digitize_floor(array,length):
@@ -780,9 +787,9 @@ def collapse_dims_last_var(temp,temp_dims,dist_dims):
 	#collapse_shape = [np.prod([temp.shape[dims] for dims in other_dims_ind])] + [np.prod([temp.shape[dims] for dims in dist_dims_ind ])]
 	collapse_shape = [temp.shape[dims] for dims in	other_dims_ind] + [np.prod([temp.shape[dims] for dims in dist_dims_ind ])]
         #TRANSPOSE temp TO PUT dist_dims AT THE END
-	temp = np.transpose(temp,axes=other_dims_ind+dist_dims_ind)
+	temp = np.ma.transpose(temp,axes=other_dims_ind+dist_dims_ind)
         #COLLAPSE dist_dims
-	temp = np.reshape(temp,collapse_shape)
+	temp = np.ma.reshape(temp,collapse_shape)
 	return temp
 
 def replicate_netcdf_file(output,data):
