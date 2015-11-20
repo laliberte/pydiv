@@ -331,8 +331,8 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
 
         if ('check' in dir(options) and options.check!=None): 
             for checkvar_id, checkvar in enumerate(options.check):
-                temp=output_checks.createVariable(flux_var+'_check_'+checkvar,'f',(time_var,))
-                temp[:]=checks[gotvar][checkvar_id]
+                output_checks.createVariable(flux_var+'_check_'+checkvar,'f',(time_var,))
+                output_checks.variables[flux_var+'_check_'+checkvar][:]=checks[gotvar][checkvar_id]
     output.sync()
     return
 
@@ -383,10 +383,9 @@ def output_conversion_massfluxes(data,output,source_group_name,flux_var,var,flux
         shape=list(output_fluxes.variables[out_flux_var].shape)
         index_staggered = list(output_fluxes.variables[out_flux_var].dimensions).index('s'+gotvar.capitalize())
         shape[index_staggered]+=1
-        temp=np.take(
+        output_fluxes.variables[out_flux_var][:]=np.take(
                     np.reshape(fluxes[gotvar],tuple(shape),order='F'),
                         range(1,shape[index_staggered]),axis=index_staggered)
-        output_fluxes.variables[out_flux_var][:]=temp
         output.sync()
 
         if options.divergence and not 'weight' in out_flux_var.split('_'):
@@ -428,7 +427,7 @@ def output_conversion_masstendency(data,output,source_group_name,flux_var,var,ma
 
     if not time_var in output_mass.dimensions.keys():
         output_mass.createDimension(time_var,len(data_grp.variables[time_var]))
-        temp=output_mass.createVariable(time_var,'d',(time_var,))
+        output_mass.createVariable(time_var,'d',(time_var,))
         output_mass.variables[time_var][:]=data_grp.variables[time_var][:]
         output_mass.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
         output_mass.variables[time_var].setncattr('calendar',data_grp.variables[time_var].calendar)
@@ -853,10 +852,10 @@ def generate_test(options):
             output.groups[var].variables[dim][:]=dimensions[dim]
             output.groups[var].variables[var_list[var][0]].setncattr('units','days since 1850-01-01 00:00:00')
             output.groups[var].variables[var_list[var][0]].setncattr('calendar','365_day')
-        temp=output.groups[var].createVariable(var,'f',var_list[var])
-        temp[:]=0.0
+        output.groups[var].createVariable(var,'f',var_list[var])
+        output.groups[var].variables[var][:]=0.0
+    output.sync()
             
-
 
     var_data={
               'flux_ua':0.5,
