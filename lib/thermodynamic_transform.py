@@ -979,7 +979,7 @@ F. Laliberte, J. Zika, L. Mudryk, P. J. Kushner, J. Kjellsson, K. Doos, Science.
     science_parser.add_argument("--divergence",dest="divergence",
                       default=False, action="store_true",
                       help="Compute divergence in phase space")
-    science_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','thetav'],
+    science_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','thetav','expansion'],
                                        help='Compute de global derivatives of the massfluxes multiplied by the check variables.' )
 
     test_parser=subparsers.add_parser('transform_test',
