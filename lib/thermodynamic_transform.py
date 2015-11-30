@@ -169,8 +169,11 @@ def perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,optio
         fluxes = np.apply_along_axis(compute_vector_jd_got,-1,
                                          jd_space,
                                          dist_def[var])
+        del jd_space
         output_conversion_massfluxes(data,output,group_name,flux_var,var,fluxes,options,dist_def[var],source_name,out_name)
         output.sync()
+        del fluxes
+
         if not 'weight' in flux_var.split('_'):
             output_conversion_checks(data,output,group_name,flux_var,var,checks,options,source_name,out_name)
         output.sync()
@@ -180,16 +183,20 @@ def perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,optio
         mass = np.apply_along_axis(compute_vector_jd,-1,
                                          jd_space,
                                          dist_def[var])
+        del jd_space
         output_conversion_masstendency(data,output,group_name,flux_var,var,mass,options,dist_def[var],source_name,out_name)
         output.sync()
+        del mass
 
     if var in ['dmass']:
         jd_space=create_sources_science(data,group_name,flux_var,var,dist_def,quantity=quantity)
-        mass = np.apply_along_axis(compute_vector_jd,-1,
+        dmass = np.apply_along_axis(compute_vector_jd,-1,
                                          jd_space,
                                          dist_def[var])
-        output_conversion_sources(data,output,group_name,flux_var,var,mass,options,dist_def[var],source_name,out_name)
+        del jd_space
+        output_conversion_sources(data,output,group_name,flux_var,var,dmass,options,dist_def[var],source_name,out_name)
         output.sync()
+        del dmass
     return
 
 def compute_sum_massfluxes(output,dist_def,out_name,options):
@@ -331,8 +338,8 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
 
         if ('check' in dir(options) and options.check!=None): 
             for checkvar_id, checkvar in enumerate(options.check):
-                temp=output_checks.createVariable(flux_var+'_check_'+checkvar,'f',(time_var,))
-                temp[:]=checks[gotvar][checkvar_id]
+                output_checks.createVariable(flux_var+'_check_'+checkvar,'f',(time_var,))
+                output_checks.variables[flux_var+'_check_'+checkvar][:]=checks[gotvar][checkvar_id]
     output.sync()
     return
 
@@ -383,10 +390,9 @@ def output_conversion_massfluxes(data,output,source_group_name,flux_var,var,flux
         shape=list(output_fluxes.variables[out_flux_var].shape)
         index_staggered = list(output_fluxes.variables[out_flux_var].dimensions).index('s'+gotvar.capitalize())
         shape[index_staggered]+=1
-        temp=np.take(
+        output_fluxes.variables[out_flux_var][:]=np.take(
                     np.reshape(fluxes[gotvar],tuple(shape),order='F'),
                         range(1,shape[index_staggered]),axis=index_staggered)
-        output_fluxes.variables[out_flux_var][:]=temp
         output.sync()
 
         if options.divergence and not 'weight' in out_flux_var.split('_'):
@@ -428,7 +434,7 @@ def output_conversion_masstendency(data,output,source_group_name,flux_var,var,ma
 
     if not time_var in output_mass.dimensions.keys():
         output_mass.createDimension(time_var,len(data_grp.variables[time_var]))
-        temp=output_mass.createVariable(time_var,'d',(time_var,))
+        output_mass.createVariable(time_var,'d',(time_var,))
         output_mass.variables[time_var][:]=data_grp.variables[time_var][:]
         output_mass.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
         output_mass.variables[time_var].setncattr('calendar',data_grp.variables[time_var].calendar)
@@ -980,7 +986,7 @@ F. Laliberte, J. Zika, L. Mudryk, P. J. Kushner, J. Kjellsson, K. Doos, Science.
     science_parser.add_argument("--divergence",dest="divergence",
                       default=False, action="store_true",
                       help="Compute divergence in phase space")
-    science_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','thetav'],
+    science_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','expansion'],
                                        help='Compute de global derivatives of the massfluxes multiplied by the check variables.' )
 
     test_parser=subparsers.add_parser('transform_test',
