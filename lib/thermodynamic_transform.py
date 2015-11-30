@@ -233,7 +233,8 @@ def compute_divergence(output,dist_def,out_name,options):
 
     time_var='time'
     if not time_var in output_div.dimensions.keys():
-        output_div.createDimension(time_var,len(output_grp.variables[time_var]))
+        #output_div.createDimension(time_var,len(output_grp.variables[time_var]))
+        output_div.createDimension(time_var,None)
         output_div.createVariable(time_var,'d',(time_var,))
         output_div.variables[time_var][:]=output_grp.variables[time_var][:]
         output_div.variables[time_var].setncattr('units',output_grp.variables[time_var].units)
@@ -323,7 +324,8 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
         #output_checks=output_checks.groups['checks']
 
         if not time_var in output_checks.dimensions.keys():
-            output_checks.createDimension(time_var,len(data_grp.variables[time_var]))
+            #output_checks.createDimension(time_var,len(data_grp.variables[time_var]))
+            output_checks.createDimension(time_var,None)
             output_checks.createVariable(time_var,'d',(time_var,))
             output_checks.variables[time_var][:]=data_grp.variables[time_var][:]
             output_checks.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
@@ -357,7 +359,8 @@ def output_conversion_massfluxes(data,output,source_group_name,flux_var,var,flux
         output_fluxes=output.groups[out_group_name]
 
         if not time_var in output_fluxes.dimensions.keys():
-            output_fluxes.createDimension(time_var,len(data_grp.variables[time_var]))
+            #output_fluxes.createDimension(time_var,len(data_grp.variables[time_var]))
+            output_fluxes.createDimension(time_var,None)
             output_fluxes.createVariable(time_var,'d',(time_var,))
             output_fluxes.variables[time_var][:]=data_grp.variables[time_var][:]
             output_fluxes.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
@@ -426,7 +429,8 @@ def output_conversion_masstendency(data,output,source_group_name,flux_var,var,ma
             time_var=time_type
 
     if not time_var in output_mass.dimensions.keys():
-        output_mass.createDimension(time_var,len(data_grp.variables[time_var]))
+        #output_mass.createDimension(time_var,len(data_grp.variables[time_var]))
+        output_mass.createDimension(time_var,None)
         output_mass.createVariable(time_var,'d',(time_var,))
         output_mass.variables[time_var][:]=data_grp.variables[time_var][:]
         output_mass.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
@@ -481,7 +485,8 @@ def output_conversion_sources(data,output,source_group_name,flux_var,var,sources
             time_var=time_type
 
     if not time_var in output_sources.dimensions.keys():
-        output_sources.createDimension(time_var,len(data_grp.variables[time_var]))
+        #output_sources.createDimension(time_var,len(data_grp.variables[time_var]))
+        output_sources.createDimension(time_var,None)
         output_sources.createVariable(time_var,'d',(time_var,))
         output_sources.variables[time_var][:]=data_grp.variables[time_var][:]
         output_sources.variables[time_var].setncattr('units',data_grp.variables[time_var].units)
