@@ -743,9 +743,6 @@ def bin_gotvar_over_mask(dist_def,jd_space,jd_out,gotvar,binning_mask):
     temp_data = jd_space['flux'][binning_mask]*jd_space[gotvar+'_MASK'][binning_mask]
 
     #CREATE OUPTUT:
-    #list_types=[(gotvar,np.float) for gotvar in dist_def['vars']]
-    #jd_out=np.zeros((dist_def['phase_space_length']+1,),list_types)
-
     #DO THE COMPUTATION USING NP.BINCOUNT
     jd_out[gotvar] += np.bincount(bin_array,
                                  weights=temp_data,
@@ -1014,7 +1011,7 @@ F. Laliberte, J. Zika, L. Mudryk, P. J. Kushner, J. Kjellsson, K. Doos, Science.
                       choices=['smoist,ta','hus,gh_gc','hus,gc_gv','hus,gd','pa,thetav'],
                       default='smoist,ta',
                       help="coordinates onto which the projection should be performed")
-    thermal_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','thetav'],
+    thermal_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','expansion'],
                                        help='Compute the global derivatives of the massfluxes multiplied by the check variables.' )
 
     coarse_parser=subparsers.add_parser('coarse_grain',
