@@ -340,8 +340,8 @@ def output_conversion_checks(data,output,source_group_name,flux_var,var,checks,o
 
         if ('check' in dir(options) and options.check!=None): 
             for checkvar_id, checkvar in enumerate(options.check):
-                output_checks.createVariable(flux_var+'_check_'+checkvar,'f',(time_var,))
-                output_checks.variables[flux_var+'_check_'+checkvar][:]=checks[gotvar][checkvar_id]
+                output_checks.createVariable(flux_var+'_'+var+'_check_'+checkvar,'f',(time_var,))
+                output_checks.variables[flux_var+'_'+var+'_check_'+checkvar][:]=checks[gotvar][checkvar_id]
     output.sync()
     return
 
