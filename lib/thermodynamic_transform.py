@@ -126,7 +126,7 @@ def projection_science(options):
     dist_def['hus']['bc'] = 'staggered'
     dist_def['pa']['bc'] = 'staggered'
 
-    return perform_transforms(options,dist_def,source_name='tt_',out_name=options.coordinates.replace(',','_')+'_')
+    return perform_transforms(options,dist_def,source_name='tt_',out_name='ttproj_'+options.coordinates.replace(',','_')+'_')
 
 def perform_transforms(options,dist_def,source_name='',out_name=''):
     #LOAD THE DATA:
@@ -148,10 +148,11 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
         sub_var_list=[flux_var for flux_var in data.groups[group_name].variables.keys() if
                                 set(data.groups[group_name].variables[flux_var].dimensions).issuperset(dist_def[var]['dims'])]
         for flux_var in sub_var_list:
-            perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,options,source_name,out_name)
-            if 'quantity' in dir(options):
-                for quantity in options.quantity:
-                    perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,options,source_name,out_name+quantity+'_',quantity=quantity)
+            if not 'diff' in flux_var.split('_'):
+                perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,options,source_name,out_name)
+                if 'quantity' in dir(options):
+                    for quantity in options.quantity:
+                        perform_transform_one_var(data,output,group_name,flux_var,var,dist_def,options,source_name,out_name+quantity+'_',quantity=quantity)
 
     if 'quantity' in dir(options):
         for quantity in options.quantity:
@@ -159,6 +160,9 @@ def perform_transforms(options,dist_def,source_name='',out_name=''):
     compute_sum_massfluxes(output,dist_def,out_name,options)
         
     if options.divergence:
+        #if 'quantity' in dir(options):
+        #    for quantity in options.quantity:
+        #        compute_sum_massfluxes(output,dist_def,out_name+quantity+'_',options)
         compute_divergence(output,dist_def,out_name,options)
     output.close()           
     return
@@ -453,26 +457,29 @@ def output_conversion_masstendency(data,output,source_group_name,flux_var,var,ma
             output_mass.variables[other_gotvar.capitalize()][:]=disc.inv_conversion(other_gotvar)(disc.inv_discretization(other_gotvar)(np.arange(0,length)+0.5))
     
     phase_space_dims=tuple([ps_dim.capitalize() for ps_dim in dist_def['vars']])
-    output_mass.createVariable(flux_var,'f',(time_var,)+phase_space_dims,zlib=options.compression)
 
-    shape=list(mass.shape[:-1]+output_mass.variables[flux_var].shape[-len(dist_def['vars']):])
+    #out_flux_var=flux_var+'_'+var
+    out_flux_var=flux_var
+    output_mass.createVariable(out_flux_var,'f',(time_var,)+phase_space_dims,zlib=options.compression)
 
-    output_mass.variables[flux_var][:]=np.sum(
+    shape=list(mass.shape[:-1]+output_mass.variables[out_flux_var].shape[-len(dist_def['vars']):])
+
+    output_mass.variables[out_flux_var][:]=np.sum(
                                     np.reshape(mass,tuple(shape),order='F'),axis=tuple(range(1,len(mass.shape)-1)))
     output.sync()
 
     if options.divergence and not 'weight' in flux_var.split('_'):
         phase_space_dims=tuple([ps_dim.capitalize() for ps_dim in dist_def['vars']])
-        output_mass.createVariable(flux_var+'_diff','f',(time_var,)+phase_space_dims,zlib=options.compression)
-        shape=list(mass.shape[:-1]+output_mass.variables[flux_var].shape[-len(dist_def['vars']):])
+        output_mass.createVariable(out_flux_var+'_diff','f',(time_var,)+phase_space_dims,zlib=options.compression)
+        shape=list(mass.shape[:-1]+output_mass.variables[out_flux_var].shape[-len(dist_def['vars']):])
         shape[0]-=1
 
-        output_mass.variables[flux_var+'_diff'][:-1,...]=np.sum(
+        output_mass.variables[out_flux_var+'_diff'][:-1,...]=np.sum(
                                             np.reshape(
                                             mass[1:,...]-mass[:-1,...]
                                             ,tuple(shape),order='F')
                                             ,axis=tuple(range(1,len(mass.shape)-1)))
-        output_mass.variables[flux_var+'_diff'][-1,...]=0.0
+        output_mass.variables[out_flux_var+'_diff'][-1,...]=0.0
         output.sync()
     return
 
@@ -583,7 +590,13 @@ def create_masstendency_science(data,source_group_name,flux_var,var,dist_def,qua
                                                      data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
                                         ))
     if quantity!='':
-        jd_space['flux']=fluxes*np.ma.filled((
+        if dist_def[var]['time_type']=='full':
+            jd_space['flux']=fluxes*np.ma.filled((
+                            collapse_dims_last_var(data.groups[quantity].variables[quantity][:,...],
+                                                 data.groups[quantity].variables[quantity].dimensions ,dimensions)
+                         ),fill_value=0.0)
+        else:
+            jd_space['flux']=fluxes*np.ma.filled((
                             collapse_dims_last_var(data.groups[quantity].variables[quantity][:-1,...],
                                                  data.groups[quantity].variables[quantity].dimensions ,dimensions)
                          ),fill_value=0.0)
@@ -613,7 +626,13 @@ def create_sources_science(data,source_group_name,flux_var,var,dist_def,quantity
                                                      data.groups[gotvar].variables[gotvar].dimensions ,dimensions)
                                         ))
     if quantity!='':
-        jd_space['flux']=fluxes*np.ma.filled((
+        if dist_def[var]['time_type']=='full':
+            jd_space['flux']=fluxes*np.ma.filled((
+                            collapse_dims_last_var(data.groups[quantity].variables[quantity][:,...],
+                                                 data.groups[quantity].variables[quantity].dimensions ,dimensions)
+                         ),fill_value=0.0)
+        else:
+            jd_space['flux']=fluxes*np.ma.filled((
                             collapse_dims_last_var(data.groups[quantity].variables[quantity][:-1,...],
                                                  data.groups[quantity].variables[quantity].dimensions ,dimensions)
                          ),fill_value=0.0)
@@ -988,7 +1007,7 @@ F. Laliberte, J. Zika, L. Mudryk, P. J. Kushner, J. Kjellsson, K. Doos, Science.
     science_parser.add_argument("--divergence",dest="divergence",
                       default=False, action="store_true",
                       help="Compute divergence in phase space")
-    science_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','expansion'],
+    science_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','expansion','specvolume'],
                                        help='Compute de global derivatives of the massfluxes multiplied by the check variables.' )
 
     test_parser=subparsers.add_parser('transform_test',
@@ -1011,8 +1030,10 @@ F. Laliberte, J. Zika, L. Mudryk, P. J. Kushner, J. Kjellsson, K. Doos, Science.
                       choices=['smoist,ta','hus,gh_gc','hus,gc_gv','hus,gd','pa,thetav'],
                       default='smoist,ta',
                       help="coordinates onto which the projection should be performed")
-    thermal_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','expansion'],
+    thermal_parser.add_argument('-c','--check',action='append', type=str, choices=['ta','gh_gc','gc_gv','gd','expansion','specvolume'],
                                        help='Compute the global derivatives of the massfluxes multiplied by the check variables.' )
+    thermal_parser.add_argument('-q','--quantity',action='append', type=str, choices=['hmoist'],
+                                       help='Coarse grain to C-grid.' )
 
     coarse_parser=subparsers.add_parser('coarse_grain',
                                            description=textwrap.dedent(
