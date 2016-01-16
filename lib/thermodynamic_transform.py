@@ -657,10 +657,14 @@ def create_massfluxes_science(data,group_name,flux_var,var,dist_def,options,quan
                 if not gotvar in checks.keys():
                     checks[gotvar]=[]
                 checkvar_n, checkvar_p=values_diff_c_grid(data,dist_def[var],checkvar,dimensions)
-                checks[gotvar].append((fluxes*(gotvar_n-gotvar_p)*(0.5*(checkvar_n+checkvar_p))).sum(-1))
+                checks[gotvar].append((fluxes*np.ma.filled((gotvar_n-gotvar_p)*(0.5*(checkvar_n+checkvar_p)),fill_value=0.0)).sum(-1))
+            del checkvar_n
+            del checkvar_p
         if quantity!='':
             quantityvar_n, quantityvar_p=values_diff_c_grid(data,dist_def[var],quantity,dimensions)
             jd_space['flux']=0.5*np.ma.filled(quantityvar_n+quantityvar_p,fill_value=0.0)*fluxes
+            del quantityvar_n
+            del quantityvar_p
 
         gotvar_p=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_p))
         gotvar_n=disc.discretization(gotvar)(disc.conversion(gotvar)(gotvar_n))
@@ -675,7 +679,8 @@ def create_massfluxes_science(data,group_name,flux_var,var,dist_def,options,quan
             jd_space[gotvar+'_MASK']=np.abs(np.sign(gotvar_n-gotvar_p))
             jd_space[gotvar+'_TOTAL']=np.abs(gotvar_n-gotvar_p)
             jd_space[gotvar+'_SUM']=np.zeros(jd_space[gotvar+'_MASK'].shape)
-
+        del gotvar_p
+        del gotvar_n
     return jd_space, checks
 
 def values_diff_c_grid(data,dist_def,gotvar,dimensions):
